@@ -1,0 +1,45 @@
+# stack local = dev k3s on this machine. NON-secret config only.
+# secrets (dbPassword, kubeconfig) set per dev: docs/guides/deploy-k3s.md. never commit them.
+config:
+  crawler:env: dev
+  crawler:namespace: crawler-local
+  crawler:images:
+    backend: ghcr.io/hneyra/crawler-go
+    # worker = binary + chromium (deploy/Dockerfile --target worker). default: <backend>-worker
+    worker: ghcr.io/hneyra/crawler-go-worker
+    web: ghcr.io/hneyra/crawler-web
+    # local tag. import into k3s containerd (user action). never "latest".
+    tag: dev
+  crawler:database:
+    mode: inCluster
+    storageSize: 5Gi
+    backup:
+      enabled: true
+      schedule: "17 3 * * *"
+      retentionDays: 7
+      storageSize: 5Gi
+  # worker pvc: /data/raw snapshots + /data/profile chromium profile.
+  crawler:storage:
+    rawDataSize: 5Gi
+  crawler:replicas:
+    api: 1
+    worker: 1
+    web: 1
+  crawler:ingress:
+    host: crawler.localhost
+    # no tls locally. prod requires ingress.tls.
+    rateLimit:
+      average: 20
+      burst: 40
+  # k3s pod cidr. xff trusted only from traefik pods.
+  crawler:trustedProxies: 10.42.0.0/16
+  # defaults = internal/platform/config/config.go.
+  crawler:crawl:
+    discoveryMaxPages: 50
+    extractionBatchSize: 10
+    retryMax: 3
+    retryInterval: 10m
+    stuckAfter: 30m
+    workerConcurrency: 2
+  crawler:appEnv:
+    CRAWLER_FETCH_TIMEOUT: 15s

@@ -1,4 +1,4 @@
-# backend ci. go checks + image build (no push).
+# backend ci. go checks + image builds (no push) + infra verify.
 name: ci
 
 on:
@@ -105,3 +105,21 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp --tmpfs /data:uid=65532 --shm-size 256m --user 65532:65532 \
             --entrypoint /usr/bin/chromium crawler-go-worker:ci \
             --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<h1>ok-crawler</h1>' | grep -q ok-crawler
+
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      # node 26 ships no corepack. pin yarn classic.
+      - run: npm install -g yarn@1.22.22
+      - run: yarn install --frozen-lockfile --non-interactive
+      - run: yarn verify
