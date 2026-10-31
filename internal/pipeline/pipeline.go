@@ -59,7 +59,22 @@ type payload struct {
 var errDeduped = errors.New("deduped")
 
 // Request queues a run. same kind+target already QUEUED/RUNNING -> that run (deduped=true).
+// one retry: the active job may finish between dedupe and lookup (tiny race) -> then a new run fits.
 func (s *Service) Request(ctx context.Context, kind crawl.RunKind, siteID, categoryID int64) (crawl.Run, bool, error) {
+	r, dup, err := s.request(ctx, kind, siteID, categoryID)
+	if err != nil && errors.Is(err, errRaced) {
+		r, dup, err = s.request(ctx, kind, siteID, categoryID)
+	}
+	if errors.Is(err, errRaced) {
+		return crawl.Run{}, false, apperr.Conflict("run_busy", "Ejecución en curso terminando; reintenta en unos segundos")
+	}
+	return r, dup, err
+}
+
+// errRaced = deduped against a job that finished before we could read its run.
+var errRaced = errors.New("dedupe raced with finishing run")
+
+func (s *Service) request(ctx context.Context, kind crawl.RunKind, siteID, categoryID int64) (crawl.Run, bool, error) {
 	if !kind.Valid() {
 		return crawl.Run{}, false, apperr.Invalid("invalid_run_kind", "Tipo de ejecución inválido")
 	}
@@ -86,6 +101,9 @@ func (s *Service) Request(ctx context.Context, kind crawl.RunKind, siteID, categ
 			return err
 		}
 		jobID, deduped, err := s.Jobs.Enqueue(ctx, JobRun, payload{RunID: run.ID}, jobs.EnqueueOptions{DedupeKey: key, MaxAttempts: 3})
+		if errors.Is(err, jobs.ErrDedupeRaced) {
+			return errRaced
+		}
 		if err != nil {
 			return err
 		}
@@ -97,6 +115,9 @@ func (s *Service) Request(ctx context.Context, kind crawl.RunKind, siteID, categ
 	})
 	if errors.Is(err, errDeduped) {
 		active, aerr := s.Runs.ActiveRun(ctx, kind, siteID, categoryID)
+		if apperr.IsKind(aerr, apperr.KindNotFound) {
+			return crawl.Run{}, false, errRaced
+		}
 		return active, true, aerr
 	}
 	if err != nil {
@@ -106,7 +127,7 @@ func (s *Service) Request(ctx context.Context, kind crawl.RunKind, siteID, categ
 }
 
 // Handle = jobs.Handler for JobRun.
-func (s *Service) Handle(ctx context.Context, j jobs.Job) error {
+func (s *Service) Handle(ctx context.Context, j jobs.Job) (err error) {
 	var p payload
 	if err := json.Unmarshal(j.Payload, &p); err != nil || p.RunID == 0 {
 		return jobs.Permanent(fmt.Errorf("bad crawl.run payload: %s", j.Payload))
@@ -127,15 +148,30 @@ func (s *Service) Handle(ctx context.Context, j jobs.Job) error {
 	log := s.log().With("run_id", run.ID, "site_id", run.SiteID, "kind", run.Kind)
 	log.Info("run started", "attempt", j.Attempts)
 	stats := map[string]any{}
-	err = s.execute(ctx, run, stats)
-
 	// bookkeeping survives shutdown.
 	bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	defer func() {
+		// runner recovers panics as job errors; run must not stay RUNNING.
+		if p := recover(); p != nil {
+			st := crawl.RunQueued
+			if j.LastAttempt() {
+				st = crawl.RunFailed
+			}
+			_ = s.Runs.FinishRun(bctx, run.ID, st, stats, fmt.Sprintf("panic: %v", p))
+			panic(p)
+		}
+	}()
+	err = s.execute(ctx, run, stats)
+
 	switch {
 	case err == nil:
 		log.Info("run completed")
 		return s.Runs.FinishRun(bctx, run.ID, crawl.RunCompleted, stats, "")
+	case errors.Is(context.Cause(ctx), jobs.ErrLeaseLost):
+		// job no longer ours (crash guard failed it, or other worker owns it): run is theirs.
+		log.Warn("lease lost; leaving run to current owner")
+		return err
 	case ctx.Err() != nil:
 		// shutdown: runner releases job, run goes back to queue.
 		_ = s.Runs.FinishRun(bctx, run.ID, crawl.RunQueued, stats, "interrumpida por apagado del worker")

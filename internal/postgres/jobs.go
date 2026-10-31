@@ -59,6 +59,9 @@ func (q JobQueue) Enqueue(ctx context.Context, kind string, payload any, o jobs.
 		var id int64
 		var st string
 		err := qr.QueryRow(ctx, `SELECT id, status FROM jobs WHERE kind = $1 AND dedupe_key = $2 AND status IN ('queued', 'running')`, kind, key).Scan(&id, &st)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, "", fmt.Errorf("enqueue %s: %w", kind, jobs.ErrDedupeRaced)
+		}
 		if err != nil {
 			return 0, "", fmt.Errorf("enqueue %s: find deduped: %w", kind, err)
 		}

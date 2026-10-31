@@ -36,6 +36,10 @@ const FollowUpSuffix = "#next"
 // DefaultMaxAttempts when not given.
 const DefaultMaxAttempts = 5
 
+// ErrDedupeRaced = enqueue hit dedupe but the conflicting job finished before it could be read.
+// retry the enqueue.
+var ErrDedupeRaced = errors.New("dedupe target finished concurrently")
+
 // ErrLeaseLost = job no longer owned by worker (expired + reclaimed, or finished).
 var ErrLeaseLost = errors.New("job lease lost")
 

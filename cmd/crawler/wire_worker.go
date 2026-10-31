@@ -22,6 +22,8 @@ const (
 	jobRescueStuck = "maintenance.rescue_stuck" // IN_PROGRESS of dead workers -> PENDING
 	jobPurge       = "maintenance.purge"        // old finished jobs + idle login throttle rows
 	purgeAfter     = 7 * 24 * time.Hour
+	workerLease    = 30 * time.Second
+	reseedEvery    = 30 * time.Minute
 )
 
 func pipelineService(d deps) *pipeline.Service {
@@ -40,11 +42,29 @@ type seededRunner struct {
 
 func (s seededRunner) LastTick() time.Time { return s.r.LastTick() }
 
+// Run seeds, then re-seeds every reseedEvery: a chain broken by a long db outage
+// (re-enqueue out of attempts) comes back without a restart. dedupe per slot = no duplicates.
 func (s seededRunner) Run(ctx context.Context) error {
 	if err := s.seed(ctx); err != nil {
 		return fmt.Errorf("seed periodic jobs: %w", err)
 	}
-	return s.r.Run(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(reseedEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				_ = s.seed(ctx) // next tick retries
+			}
+		}
+	}()
+	err := s.r.Run(ctx)
+	<-done
+	return err
 }
 
 // wireWorker = job runner with crawl + maintenance handlers. reg gets crawler_* metrics.
@@ -62,7 +82,9 @@ func wireWorker(ctx context.Context, d deps, reg prometheus.Registerer) (seededR
 	ids := postgres.Identity{Pool: d.pool}
 	c := d.cfg.Crawl
 	host, _ := os.Hostname()
-	r := &jobs.Runner{Queue: queue, Log: d.log, Worker: host + "-" + strconv.Itoa(os.Getpid()), Concurrency: d.cfg.WorkerConcurrency}
+	// lease 30s -> heartbeat (and liveness tick) every 10s: busy worker stays healthy under
+	// workerHealthMaxAge (30s); dead worker's job reclaimed within 30s.
+	r := &jobs.Runner{Queue: queue, Log: d.log, Worker: host + "-" + strconv.Itoa(os.Getpid()), Concurrency: d.cfg.WorkerConcurrency, Lease: workerLease}
 	r.Register(pipeline.JobRun, p.Handle)
 
 	stuckEvery := max(c.StuckAfter/2, time.Minute)

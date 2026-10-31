@@ -213,3 +213,63 @@ func TestCrashGuardFailsRun(t *testing.T) {
 		t.Fatalf("run %+v", got)
 	}
 }
+
+type panicExtractor struct{}
+
+func (panicExtractor) ProcessBatch(context.Context, int64) (extraction.Batch, error) { panic("boom") }
+
+func TestPanicOnLastAttemptFailsRun(t *testing.T) {
+	e := newEnv(t, "https://x.pe")
+	ctx := context.Background()
+	e.svc.Extraction = panicExtractor{}
+	run, _, _ := e.svc.Request(ctx, crawl.RunExtractSite, e.site.ID, 0)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("panic swallowed")
+			}
+		}()
+		_ = runHandle(t, e, run, 3, 3)
+	}()
+	got, _ := e.runs.GetRun(ctx, run.ID)
+	if got.Status != crawl.RunFailed || got.Error != "panic: boom" {
+		t.Fatalf("run %+v", got)
+	}
+}
+
+type blockingExtractor struct{}
+
+func (blockingExtractor) ProcessBatch(ctx context.Context, _ int64) (extraction.Batch, error) {
+	<-ctx.Done()
+	return extraction.Batch{}, ctx.Err()
+}
+
+// lease lost: job belongs to someone else (or crash guard failed it) -> run status untouched.
+func TestLeaseLostLeavesRunAlone(t *testing.T) {
+	e := newEnv(t, "https://x.pe")
+	ctx := context.Background()
+	e.svc.Extraction = blockingExtractor{}
+	run, _, _ := e.svc.Request(ctx, crawl.RunExtractSite, e.site.ID, 0)
+	jctx, cancel := context.WithCancelCause(ctx)
+	errc := make(chan error, 1)
+	go func() {
+		errc <- e.svc.Handle(jctx, jobs.Job{Payload: []byte(fmt.Sprintf(`{"run_id":%d}`, run.ID)), Attempts: 1, MaxAttempts: 3})
+	}()
+	for {
+		got, _ := e.runs.GetRun(ctx, run.ID)
+		if got.Status == crawl.RunRunning {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// crash guard path: run marked FAILED by another process while we still run.
+	_ = e.runs.FinishRun(ctx, run.ID, crawl.RunFailed, nil, "worker died repeatedly")
+	cancel(jobs.ErrLeaseLost)
+	if err := <-errc; err == nil {
+		t.Fatal("want ctx error")
+	}
+	got, _ := e.runs.GetRun(ctx, run.ID)
+	if got.Status != crawl.RunFailed || got.Error != "worker died repeatedly" {
+		t.Fatalf("run overwritten: %+v", got)
+	}
+}
