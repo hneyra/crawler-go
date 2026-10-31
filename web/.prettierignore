@@ -1,0 +1,8 @@
+node_modules
+/.svelte-kit
+/build
+/test-results
+/playwright-report
+src/lib/api/openapi.yaml
+src/lib/api/schema.d.ts
+static

@@ -117,6 +117,23 @@ Jobs periódicos del worker:
 Métricas Prometheus: API (`/metrics` en `CRAWLER_METRICS_ADDR`) `crawler_sites_total`, `crawler_urls{status}`,
 `crawler_items_total`, `crawler_http_*`; worker `crawler_discovery_*`, `crawler_fetch_*`, `crawler_extraction_*`.
 
+## Panel web (`web/`)
+
+SvelteKit 3 + Svelte 5 (mismo stack que costea-frontend): SPA de administración con login, dashboard por sitio
+(stats + crawl/discovery/extracción), CRUD de sitios y categorías (editor de selectores/JSONPaths), ejecuciones
+(con refresco mientras corren) e items con árbol de propiedades.
+
+```bash
+cd web
+yarn install
+yarn dev            # http://localhost:5173, proxy /api -> API_INTERNAL_URL (default http://127.0.0.1:8080)
+```
+
+El backend debe tener `CRAWLER_PUBLIC_URL` = origen del panel (chequeo CSRF). Tipos de la API generados desde
+`api/openapi.yaml`: `yarn api:sync && yarn api:gen` (`yarn api:check` en CI). Stack completo con panel:
+`make up-full` (http://localhost:3000). E2E (Playwright) contra un stack en marcha:
+`BASE_URL=... E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... yarn e2e`.
+
 ## Desarrollo
 
 - `make generate`: regenera `internal/httpapi/api.gen.go` desde `api/openapi.yaml`.

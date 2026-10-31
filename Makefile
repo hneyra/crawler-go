@@ -7,7 +7,7 @@ DB_PASSWORD ?= $(or $(CRAWLER_DB_PASSWORD),crawler-dev-only)
 TEST_DB_URL ?= postgres://crawler:$(DB_PASSWORD)@127.0.0.1:$(DB_PORT)/crawler?sslmode=disable
 VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: help db-up db-down db-reset build run test test-short fmt fmt-check vet lint vuln check generate tidy up down logs docker-build
+.PHONY: help db-up db-down db-reset build run test test-short fmt fmt-check vet lint vuln check generate tidy up up-full down logs docker-build web-check
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | cut -d: -f1 | sort
@@ -15,8 +15,11 @@ help:
 db-up:
 	docker compose up -d --wait db
 
-db-down:
-	docker compose down
+db-up-full:
+	CRAWLER_VERSION=$(VERSION) docker compose --profile full up -d --build --wait db migrate api worker web
+
+down:
+	docker compose --profile full down
 
 db-reset:
 	docker compose down -v && docker compose up -d --wait db
@@ -65,3 +68,7 @@ logs:
 
 docker-build:
 	docker build -f deploy/Dockerfile --build-arg VERSION=$(VERSION) -t crawler-go:dev .
+
+# web (admin spa): same checks as its ci job.
+web-check:
+	cd web && yarn install --frozen-lockfile && yarn api:check && yarn run check && yarn lint && yarn test && yarn build
