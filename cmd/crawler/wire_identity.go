@@ -10,6 +10,7 @@ import (
 func identityService(d deps) (*identity.Service, error) {
 	return identity.New(postgres.Identity{Pool: d.pool}, db.Runner{Pool: d.pool}, d.log, identity.Settings{
 		SessionTTL:      d.cfg.SessionTTL,
+		IdleTTL:         d.cfg.SessionIdleTTL,
 		HashConcurrency: d.cfg.PasswordHashConcurrency,
 	}, nil)
 }

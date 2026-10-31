@@ -53,7 +53,8 @@ type Repo interface {
 	RevokeSession(ctx context.Context, id int64, at time.Time) error
 	RevokeUserSessions(ctx context.Context, userID int64, at time.Time) error
 
-	LoginLockedUntil(ctx context.Context, emailNorm string) (time.Time, error) // zero = not locked
+	// LockLoginRow creates throttle row if missing + locks it until tx end. returns locked_until (zero = free).
+	LockLoginRow(ctx context.Context, emailNorm string) (time.Time, error)
 	RecordLoginFailure(ctx context.Context, emailNorm string, now time.Time) (failures int, err error)
 	LockLogin(ctx context.Context, emailNorm string, until time.Time) error
 	ClearLoginFailures(ctx context.Context, emailNorm string) error
@@ -267,58 +268,71 @@ type LoginResult struct {
 }
 
 // Login: generic error. unknown email still hashes (timing). prev session revoked (rotation).
+// throttle row locked for the whole attempt: parallel guesses on one email run one at a time,
+// so a lock decided by attempt N is seen by attempt N+1 (no check-then-act race).
 func (s *Service) Login(ctx context.Context, prev actor.Actor, email, password string) (LoginResult, error) {
 	email = strings.TrimSpace(email)
 	if len(password) > PasswordMax || len(email) > 254 {
 		return LoginResult{}, errCreds
 	}
 	norm := strings.ToLower(email)
-	until, err := s.repo.LoginLockedUntil(ctx, norm)
-	if err != nil {
-		return LoginResult{}, err
-	}
-	if s.now().Before(until) {
-		return LoginResult{}, errThrottled
-	}
-	u, err := s.repo.UserByEmail(ctx, email)
-	if err != nil {
-		if !apperr.IsKind(err, apperr.KindNotFound) {
-			return LoginResult{}, err
+	var res LoginResult
+	var outcome error // auth answer. committed tx even on failure (failure count must stick).
+	err := s.tx.InTx(ctx, func(ctx context.Context) error {
+		until, err := s.repo.LockLoginRow(ctx, norm)
+		if err != nil {
+			return err
 		}
-		if _, err := s.verify(ctx, password, s.dummy); err != nil {
-			return LoginResult{}, err
+		if s.now().Before(until) {
+			outcome = errThrottled
+			return nil
 		}
-		s.loginFailed(ctx, norm)
-		return LoginResult{}, errCreds
-	}
-	ok, err := s.verify(ctx, password, u.PasswordHash)
-	if err != nil {
-		return LoginResult{}, err
-	}
-	if !ok || u.Disabled {
-		s.loginFailed(ctx, norm)
-		return LoginResult{}, errCreds
-	}
-	if err := s.repo.ClearLoginFailures(ctx, norm); err != nil {
-		return LoginResult{}, err
-	}
-	raw, hash := randomToken()
-	csrf, _ := randomToken()
-	now := s.now()
-	sess := Session{UserID: u.ID, TokenHash: hash, CSRFToken: csrf, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.set.SessionTTL)}
-	err = s.tx.InTx(ctx, func(ctx context.Context) error {
+		u, err := s.repo.UserByEmail(ctx, email)
+		if err != nil {
+			if !apperr.IsKind(err, apperr.KindNotFound) {
+				return err
+			}
+			if _, err := s.verify(ctx, password, s.dummy); err != nil {
+				return err
+			}
+			s.loginFailed(ctx, norm)
+			outcome = errCreds
+			return nil
+		}
+		ok, err := s.verify(ctx, password, u.PasswordHash)
+		if err != nil {
+			return err
+		}
+		if !ok || u.Disabled {
+			s.loginFailed(ctx, norm)
+			outcome = errCreds
+			return nil
+		}
+		if err := s.repo.ClearLoginFailures(ctx, norm); err != nil {
+			return err
+		}
+		raw, hash := randomToken()
+		csrf, _ := randomToken()
+		now := s.now()
+		sess := Session{UserID: u.ID, TokenHash: hash, CSRFToken: csrf, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.set.SessionTTL)}
 		if prev.IsUser() && prev.SessionID != 0 {
 			if err := s.repo.RevokeSession(ctx, prev.SessionID, now); err != nil {
 				return err
 			}
 		}
-		sess.ID, err = s.repo.CreateSession(ctx, sess)
-		return err
+		if sess.ID, err = s.repo.CreateSession(ctx, sess); err != nil {
+			return err
+		}
+		res = LoginResult{Token: raw, Session: sess, User: u}
+		return nil
 	})
 	if err != nil {
 		return LoginResult{}, err
 	}
-	return LoginResult{Token: raw, Session: sess, User: u}, nil
+	if outcome != nil {
+		return LoginResult{}, outcome
+	}
+	return res, nil
 }
 
 // Logout revokes current session.

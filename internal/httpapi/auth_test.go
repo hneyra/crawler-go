@@ -67,6 +67,11 @@ func TestAuthFlowAndGuards(t *testing.T) {
 	if st := evil.do("POST", "/api/v1/sites", site, &p); st != 403 || p.Code != "bad_origin" {
 		t.Fatalf("bad origin: %d %+v", st, p)
 	}
+	cross := admin
+	cross.header = map[string]string{"Sec-Fetch-Site": "cross-site"}
+	if st := cross.do("POST", "/api/v1/sites", site, &p); st != 403 || p.Code != "bad_origin" {
+		t.Fatalf("cross-site fetch: %d %+v", st, p)
+	}
 	ok := admin
 	ok.header = map[string]string{"Origin": testOrigin}
 	if st := ok.do("POST", "/api/v1/sites", site, nil); st != 201 {
@@ -98,6 +103,19 @@ func TestLoginCookieFlags(t *testing.T) {
 	c := res.Header.Get("Set-Cookie")
 	if res.StatusCode != 200 || !strings.HasPrefix(c, httpapi.SessionCookie+"=") || !strings.Contains(c, "HttpOnly") || !strings.Contains(c, "SameSite=Lax") {
 		t.Fatalf("login (case-insensitive email): %d %q", res.StatusCode, c)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("login cache-control %q", cc)
+	}
+	sreq, _ := http.NewRequestWithContext(t.Context(), "GET", env.url+"/api/v1/auth/session", nil)
+	sreq.Header.Set("Cookie", strings.Split(c, ";")[0])
+	sres, err := http.DefaultClient.Do(sreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sres.Body.Close() }()
+	if sres.StatusCode != 200 || sres.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("session: %d cache-control %q", sres.StatusCode, sres.Header.Get("Cache-Control"))
 	}
 }
 

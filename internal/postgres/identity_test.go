@@ -134,3 +134,69 @@ func TestLoginThrottleUnlocksAfterBackoff(t *testing.T) {
 		t.Fatalf("ghost locked: %v", err)
 	}
 }
+
+// parallel wrong guesses: lock decided by one attempt is seen by the next (row lock).
+// without it, all N parallel attempts read "unlocked" and N guesses pass per window.
+func TestLoginThrottleParallelGuesses(t *testing.T) {
+	svc, _ := newIdentity(t)
+	ctx := context.Background()
+	if _, err := svc.CreateUser(ctx, "a@crawler.test", pw, true); err != nil {
+		t.Fatal(err)
+	}
+	const n = 12
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := svc.Login(ctx, actor.Actor{}, "a@crawler.test", "wrong password!!")
+			errs <- err
+		}()
+	}
+	creds, throttled := 0, 0
+	for range n {
+		err := <-errs
+		switch {
+		case apperr.IsKind(err, apperr.KindUnauthorized):
+			creds++
+		case apperr.IsKind(err, apperr.KindRateLimited):
+			throttled++
+		default:
+			t.Fatalf("unexpected: %v", err)
+		}
+	}
+	if creds != identity.LoginFreeAttempts || throttled != n-identity.LoginFreeAttempts {
+		t.Fatalf("guesses checked=%d throttled=%d, want %d/%d", creds, throttled, identity.LoginFreeAttempts, n-identity.LoginFreeAttempts)
+	}
+}
+
+func TestResolveRejectsDisabledAndExpired(t *testing.T) {
+	pool := dbtest.New(t)
+	clk := &clock{t: time.Now().UTC()}
+	svc, err := identity.New(postgres.Identity{Pool: pool}, db.Runner{Pool: pool}, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		identity.Settings{SessionTTL: 2 * time.Hour, IdleTTL: 2 * time.Hour}, clk.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := svc.CreateUser(ctx, "a@crawler.test", pw, true); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := svc.Login(ctx, actor.Actor{}, "a@crawler.test", pw)
+	// absolute ttl: active session still dies at expires_at.
+	for range 3 {
+		clk.t = clk.t.Add(50 * time.Minute)
+		_, err = svc.ResolveSession(ctx, res.Token)
+	}
+	if !apperr.IsKind(err, apperr.KindUnauthorized) {
+		t.Fatalf("absolute expiry: %v", err)
+	}
+	res, _ = svc.Login(ctx, actor.Actor{}, "a@crawler.test", pw)
+	if _, err := pool.Exec(ctx, `UPDATE users SET disabled = true`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveSession(ctx, res.Token); !apperr.IsKind(err, apperr.KindUnauthorized) {
+		t.Fatalf("disabled resolve: %v", err)
+	}
+	if _, err := svc.Login(ctx, actor.Actor{}, "a@crawler.test", pw); !apperr.IsKind(err, apperr.KindUnauthorized) {
+		t.Fatalf("disabled login: %v", err)
+	}
+}

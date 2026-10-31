@@ -28,6 +28,7 @@ type Config struct {
 	TrustedProxies []netip.Prefix // xff trusted only from these
 
 	SessionTTL              time.Duration
+	SessionIdleTTL          time.Duration // no request this long -> session dead
 	CookieSecure            bool
 	PasswordHashConcurrency int
 	RateLimit               bool // per ip/user limiters. off only outside prod.
@@ -65,6 +66,7 @@ func Load(getenv func(string) string) (Config, error) {
 		DBMaxConns:              r.int("CRAWLER_DB_MAX_CONNS", max(4, runtime.NumCPU())),
 		PublicURL:               strings.TrimRight(r.str("CRAWLER_PUBLIC_URL", "http://localhost:5173"), "/"),
 		SessionTTL:              r.dur("CRAWLER_SESSION_TTL", 7*24*time.Hour),
+		SessionIdleTTL:          r.dur("CRAWLER_SESSION_IDLE_TTL", 24*time.Hour),
 		PasswordHashConcurrency: r.int("CRAWLER_PASSWORD_HASH_CONCURRENCY", 4),
 		WorkerConcurrency:       r.int("CRAWLER_WORKER_CONCURRENCY", 2),
 		WorkerHealthAddr:        r.str("CRAWLER_WORKER_HEALTH_ADDR", "127.0.0.1:8081"),

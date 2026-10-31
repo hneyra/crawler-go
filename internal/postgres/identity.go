@@ -139,14 +139,18 @@ func (r Identity) RevokeUserSessions(ctx context.Context, userID int64, at time.
 	return err
 }
 
-func (r Identity) LoginLockedUntil(ctx context.Context, email string) (time.Time, error) {
-	var until *time.Time
-	err := db.Q(ctx, r.Pool).QueryRow(ctx, `SELECT locked_until FROM login_throttle WHERE email_norm = $1`, email).Scan(&until)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && until == nil) {
-		return time.Time{}, nil
+// LockLoginRow: upsert + FOR UPDATE. call inside tx; serializes attempts per email.
+func (r Identity) LockLoginRow(ctx context.Context, email string) (time.Time, error) {
+	q := db.Q(ctx, r.Pool)
+	if _, err := q.Exec(ctx, `INSERT INTO login_throttle (email_norm) VALUES ($1) ON CONFLICT (email_norm) DO NOTHING`, email); err != nil {
+		return time.Time{}, fmt.Errorf("login throttle row: %w", err)
 	}
-	if err != nil {
+	var until *time.Time
+	if err := q.QueryRow(ctx, `SELECT locked_until FROM login_throttle WHERE email_norm = $1 FOR UPDATE`, email).Scan(&until); err != nil {
 		return time.Time{}, fmt.Errorf("login lock: %w", err)
+	}
+	if until == nil {
+		return time.Time{}, nil
 	}
 	return *until, nil
 }

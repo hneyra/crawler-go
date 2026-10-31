@@ -48,7 +48,22 @@ func (a *AuthAPI) Login(ctx context.Context, req LoginRequestObject) (LoginRespo
 		return nil, err
 	}
 	c := a.cookie(res.Token, int(a.SessionTTL.Seconds()), res.Session.ExpiresAt)
-	return Login200JSONResponse{Body: sessionDTO(res.User, res.Session), Headers: Login200ResponseHeaders{SetCookie: &c}}, nil
+	return noStoreLogin{Login200JSONResponse{Body: sessionDTO(res.User, res.Session), Headers: Login200ResponseHeaders{SetCookie: &c}}}, nil
+}
+
+// noStore wrappers: body carries csrf token (+ cookie). never cached by proxy/browser.
+type noStoreLogin struct{ Login200JSONResponse }
+
+func (r noStoreLogin) VisitLoginResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", "no-store")
+	return r.Login200JSONResponse.VisitLoginResponse(w)
+}
+
+type noStoreSession struct{ GetSession200JSONResponse }
+
+func (r noStoreSession) VisitGetSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", "no-store")
+	return r.GetSession200JSONResponse.VisitGetSessionResponse(w)
 }
 
 // logoutResponse = 204 + cookie clear. generated 204 type has no headers.
@@ -78,5 +93,5 @@ func (a *AuthAPI) GetSession(ctx context.Context, _ GetSessionRequestObject) (Ge
 	if err != nil {
 		return nil, err
 	}
-	return GetSession200JSONResponse(sessionDTO(u, s)), nil
+	return noStoreSession{GetSession200JSONResponse(sessionDTO(u, s))}, nil
 }
