@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html/charset"
 )
 
 // Page = fetched html as dom. Doc.Url = base for relative links.
@@ -161,6 +162,12 @@ func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, string, i
 	if int64(len(body)) > limit {
 		return "", "", 0, fmt.Errorf("GET %s: body larger than %d bytes", rawURL, limit)
 	}
+	// legacy charsets (latin-1 sites) -> utf-8. header, <meta> or sniffing (jsoup parity).
+	if enc, name, _ := charset.DetermineEncoding(body, res.Header.Get("Content-Type")); name != "utf-8" {
+		if dec, err := enc.NewDecoder().Bytes(body); err == nil {
+			body = dec
+		}
+	}
 	final := rawURL
 	if res.Request != nil && res.Request.URL != nil {
 		final = res.Request.URL.String()
@@ -170,6 +177,10 @@ func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, string, i
 
 // ErrNoRenderer = blocked page and no headless fallback configured.
 var ErrNoRenderer = errors.New("page blocked and no renderer configured")
+
+// ErrRendererUnavailable = our browser could not start. own failure, not the page's:
+// callers must not burn url retries on it.
+var ErrRendererUnavailable = errors.New("headless renderer unavailable")
 
 func (f *HTTPFetcher) render(ctx context.Context, rawURL, waitSelector, why string) (Page, error) {
 	f.obs().CloudflareFallback()

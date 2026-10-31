@@ -23,28 +23,47 @@ type Props map[string]any
 type Rules struct {
 	cfg       crawl.ExtractionConfig
 	scripts   []*regexp.Regexp
-	jsonPaths map[string]jp.Expr
+	jsonPaths map[string]path
 }
 
-// Compile validates regexes + jsonpaths. bad rule -> error (config bug, fail whole batch early).
-func Compile(cfg crawl.ExtractionConfig) (Rules, error) {
+type path struct {
+	x          jp.Expr
+	indefinite bool // wildcard/descent/filter/slice/union -> always list (jayway)
+}
+
+// Compile builds rules. bad regex/jsonpath dropped with a warning (java skipped bad paths per use);
+// one typo must not stop the whole site.
+func Compile(cfg crawl.ExtractionConfig) (Rules, []string) {
 	cfg = cfg.Normalize()
-	r := Rules{cfg: cfg, jsonPaths: map[string]jp.Expr{}}
+	r := Rules{cfg: cfg, jsonPaths: map[string]path{}}
+	var warn []string
 	for _, p := range cfg.ScriptPatterns {
 		re, err := regexp.Compile(p)
 		if err != nil {
-			return Rules{}, err
+			warn = append(warn, "script pattern "+p+": "+err.Error())
+			continue
 		}
 		r.scripts = append(r.scripts, re)
 	}
 	for k, p := range cfg.JSONPaths {
 		x, err := jp.ParseString(p)
 		if err != nil {
-			return Rules{}, err
+			warn = append(warn, "json path "+k+": "+err.Error())
+			continue
 		}
-		r.jsonPaths[k] = x
+		r.jsonPaths[k] = path{x: x, indefinite: indefinite(x)}
 	}
-	return r, nil
+	return r, warn
+}
+
+func indefinite(x jp.Expr) bool {
+	for _, f := range x {
+		switch f.(type) {
+		case jp.Wildcard, jp.Descent, *jp.Filter, jp.Slice, jp.Union:
+			return true
+		}
+	}
+	return false
 }
 
 // Strategy of compiled rules.
@@ -53,20 +72,22 @@ func (r Rules) Strategy() crawl.DetailStrategy { return r.cfg.DetailStrategy }
 // InterceptPatterns for AJAX renders.
 func (r Rules) InterceptPatterns() []string { return r.cfg.InterceptPatterns }
 
-// FromPage runs html-side extractors: css selectors, script regex (SCRIPT_JSON), json-ld.
-func (r Rules) FromPage(doc *goquery.Document) Props {
+// Extract = java order: css selectors, script regex (SCRIPT_JSON), intercepted xhr (AJAX), json-ld last.
+// later writes win.
+func (r Rules) Extract(doc *goquery.Document, intercepted []fetch.Intercepted) Props {
 	p := Props{}
 	r.selectors(doc, p)
 	if r.cfg.DetailStrategy == crawl.StrategyScriptJSON {
 		r.fromScripts(doc, p)
 	}
+	r.fromIntercepted(p, intercepted)
 	r.jsonLD(doc, p)
 	return p
 }
 
-// FromIntercepted applies jsonpaths to each captured response + keeps raw json
+// fromIntercepted applies jsonpaths to each captured response + keeps raw json
 // under ajax_<status>_<sanitized url> (java key format).
-func (r Rules) FromIntercepted(p Props, resps []fetch.Intercepted) {
+func (r Rules) fromIntercepted(p Props, resps []fetch.Intercepted) {
 	for _, it := range resps {
 		v, err := oj.ParseString(it.Body)
 		if err != nil {
@@ -115,7 +136,10 @@ func (r Rules) fromScripts(doc *goquery.Document, p Props) {
 
 // jsonLD: every ld+json block; last valid wins as "jsonLd"; jsonpaths applied to each.
 func (r Rules) jsonLD(doc *goquery.Document, p Props) {
-	doc.Find(`script[type="application/ld+json"]`).Each(func(_ int, s *goquery.Selection) {
+	doc.Find("script[type]").Each(func(_ int, s *goquery.Selection) {
+		if t, _ := s.Attr("type"); !strings.EqualFold(strings.TrimSpace(t), "application/ld+json") {
+			return // jsoup attr match is case-insensitive
+		}
 		raw := strings.TrimSpace(s.Text())
 		if raw == "" {
 			return
@@ -129,16 +153,18 @@ func (r Rules) jsonLD(doc *goquery.Document, p Props) {
 	})
 }
 
-// applyPaths: one match -> value, many -> list (indefinite path), none -> skip (jayway PathNotFound).
+// applyPaths = jayway shapes: indefinite path -> list (maybe empty); definite -> value, missing -> skip.
 func (r Rules) applyPaths(data any, p Props) {
 	for k, x := range r.jsonPaths {
-		got := x.Get(data)
-		switch len(got) {
-		case 0:
-		case 1:
-			p[k] = got[0]
-		default:
+		got := x.x.Get(data)
+		switch {
+		case x.indefinite:
+			if got == nil {
+				got = []any{}
+			}
 			p[k] = got
+		case len(got) > 0:
+			p[k] = got[0]
 		}
 	}
 }

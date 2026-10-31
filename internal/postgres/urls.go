@@ -106,11 +106,13 @@ func (s URLs) ResetFailed(ctx context.Context, maxRetries int) (int64, error) {
 // ClaimPending: oldest first, FOR UPDATE SKIP LOCKED -> parallel workers split the queue.
 func (s URLs) ClaimPending(ctx context.Context, siteID int64, limit int) ([]crawl.DiscoveredURL, error) {
 	rows, err := db.Q(ctx, s.Pool).Query(ctx,
-		`UPDATE discovered_url SET status = 'IN_PROGRESS', last_attempt_at = now()
-		 WHERE id IN (
+		`WITH picked AS (
 		   SELECT id FROM discovered_url WHERE site_id = $1 AND status = 'PENDING'
 		   ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED)
-		 RETURNING `+urlCols, siteID, limit)
+		 UPDATE discovered_url d SET status = 'IN_PROGRESS', last_attempt_at = now()
+		 FROM picked WHERE d.id = picked.id
+		 RETURNING d.id, d.site_id, d.category_id, d.url, d.url_hash, d.status, d.retry_count, d.last_attempt_at,
+		           coalesce(d.last_error, ''), d.created_at`, siteID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim urls: %w", err)
 	}

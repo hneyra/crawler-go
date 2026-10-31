@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/hneyra/crawler-go/internal/apperr"
 	"github.com/hneyra/crawler-go/internal/crawl"
 	"github.com/hneyra/crawler-go/internal/fetch"
 )
@@ -103,9 +105,9 @@ func (s *Service) ProcessBatch(ctx context.Context, siteID int64) (Batch, error)
 	if err != nil {
 		return Batch{}, err
 	}
-	rules, err := Compile(site.ExtractionConfig)
-	if err != nil {
-		return Batch{}, fmt.Errorf("site %d extraction rules: %w", siteID, err)
+	rules, warns := Compile(site.ExtractionConfig)
+	for _, w := range warns {
+		s.log().Warn("extraction rule skipped", "site_id", siteID, "rule", w)
 	}
 	size := s.BatchSize
 	if size <= 0 {
@@ -128,26 +130,25 @@ func (s *Service) ProcessBatch(ctx context.Context, siteID int64) (Batch, error)
 		if s.Observer != nil {
 			s.Observer.URLDone(time.Since(start), perr)
 		}
-		if perr != nil && ctx.Err() != nil {
+		switch {
+		case perr != nil && ctx.Err() != nil:
 			// shutdown, not the site's fault: no retry consumed.
 			return b, s.release(urls[i:], ctx.Err())
-		}
-		var se storeError
-		if errors.As(perr, &se) {
+		case ownFailure(perr):
 			return b, s.release(urls[i:], perr)
-		}
-		if perr != nil {
+		case perr != nil:
 			b.Failed++
 			b.LastError = perr.Error()
 			log.Warn("extraction failed", "url", u.URL, "err", perr)
-			if err := s.Queue.MarkFailed(ctx, u.ID, perr.Error()); err != nil {
-				return b, s.release(urls[i+1:], err)
+			if err := s.mark(func(ctx context.Context) error { return s.Queue.MarkFailed(ctx, u.ID, perr.Error()) }); err != nil {
+				return b, s.release(urls[i:], err)
 			}
-			continue
-		}
-		b.Succeeded++
-		if err := s.Queue.MarkCompleted(ctx, u.ID); err != nil {
-			return b, s.release(urls[i+1:], err)
+		default:
+			b.Succeeded++
+			if err := s.mark(func(ctx context.Context) error { return s.Queue.MarkCompleted(ctx, u.ID) }); err != nil {
+				// item already upserted; re-extract later is idempotent.
+				return b, s.release(urls[i:], err)
+			}
 		}
 	}
 	log.Info("extraction batch done", "claimed", b.Claimed, "ok", b.Succeeded, "failed", b.Failed)
@@ -173,6 +174,22 @@ type storeError struct{ error }
 
 func (e storeError) Unwrap() error { return e.error }
 
+// ownFailure: our infra broke (disk, db, browser launch). url keeps its retry budget.
+func ownFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se storeError
+	return errors.As(err, &se) || errors.Is(err, fetch.ErrRendererUnavailable)
+}
+
+// mark runs a status update detached from shutdown: a finished url must not stay IN_PROGRESS.
+func (s *Service) mark(fn func(ctx context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return fn(ctx)
+}
+
 func (s *Service) processURL(ctx context.Context, site crawl.Site, rules Rules, u crawl.DiscoveredURL) error {
 	var (
 		page  fetch.Page
@@ -181,7 +198,7 @@ func (s *Service) processURL(ctx context.Context, site crawl.Site, rules Rules, 
 	)
 	if rules.Strategy() == crawl.StrategyAJAX {
 		if s.Renderer == nil {
-			return errors.New("AJAX strategy needs a headless renderer")
+			return fmt.Errorf("%w: AJAX strategy needs a headless renderer", fetch.ErrRendererUnavailable)
 		}
 		timeout := s.RenderTimeout
 		if timeout <= 0 {
@@ -202,8 +219,7 @@ func (s *Service) processURL(ctx context.Context, site crawl.Site, rules Rules, 
 				return storeError{err}
 			}
 		}
-		props = rules.FromPage(page.Doc)
-		rules.FromIntercepted(props, res.Intercepted)
+		props = rules.Extract(page.Doc, res.Intercepted)
 	} else {
 		var err error
 		if page, err = s.Fetcher.Fetch(ctx, u.URL, ""); err != nil {
@@ -212,17 +228,22 @@ func (s *Service) processURL(ctx context.Context, site crawl.Site, rules Rules, 
 		if snap, err = s.Snapshots.SaveHTML(site.ID, u.URL, page.HTML); err != nil {
 			return storeError{err}
 		}
-		props = rules.FromPage(page.Doc)
+		props = rules.Extract(page.Doc, nil)
 	}
-	// postgres text/jsonb reject \u0000: strip it, else one hostile page wedges the batch.
+	// page content cleaned for postgres (NUL, invalid utf-8, +Inf) so one hostile page
+	// cannot wedge the queue; anything still rejected as data = url failure, not ours.
 	_, err := s.Items.UpsertItem(ctx, crawl.Item{
-		DiscoveredURLID: u.ID, SiteID: site.ID, Title: stripNUL(title(props, page)).(string),
-		Properties: stripNUL(map[string]any(props)).(map[string]any), RawSnapshotPath: snap,
+		DiscoveredURLID: u.ID, SiteID: site.ID, Title: sanitize(title(props, page)).(string),
+		Properties: sanitize(map[string]any(props)).(map[string]any), RawSnapshotPath: snap,
 	})
-	if err != nil {
+	switch {
+	case err == nil:
+		return nil
+	case apperr.IsKind(err, apperr.KindInvalid):
+		return err
+	default:
 		return storeError{err}
 	}
-	return nil
 }
 
 // title = props.title if set, else <title>. java parity.
@@ -235,24 +256,34 @@ func title(p Props, page fetch.Page) string {
 	return normSpace(page.Doc.Find("title").First().Text())
 }
 
-// stripNUL removes \x00 from every string (keys too) of a decoded json tree.
-func stripNUL(v any) any {
+// sanitize makes a decoded json tree storable: strings (and keys) valid utf-8 without NUL,
+// non-finite floats -> nil.
+func sanitize(v any) any {
 	switch t := v.(type) {
 	case string:
-		return strings.ReplaceAll(t, "\x00", "")
+		return cleanString(t)
+	case float64:
+		if math.IsInf(t, 0) || math.IsNaN(t) {
+			return nil
+		}
+		return t
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, x := range t {
-			out[strings.ReplaceAll(k, "\x00", "")] = stripNUL(x)
+			out[cleanString(k)] = sanitize(x)
 		}
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, x := range t {
-			out[i] = stripNUL(x)
+			out[i] = sanitize(x)
 		}
 		return out
 	default:
 		return v
 	}
+}
+
+func cleanString(s string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(s, "\uFFFD"), "\x00", "")
 }

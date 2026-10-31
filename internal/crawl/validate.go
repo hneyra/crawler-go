@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ohler55/ojg/jp"
+
 	"github.com/hneyra/crawler-go/internal/apperr"
 )
 
@@ -77,7 +79,14 @@ func (c ExtractionConfig) validateInto(f *apperr.Fields) {
 		f.Add(p+"detail_strategy", "invalid_enum", "Estrategia debe ser HTML, SCRIPT_JSON o AJAX")
 	}
 	validRules(f, p+"field_selectors", c.FieldSelectors, func(v string) bool { return len(v) <= maxSelector })
-	validRules(f, p+"json_paths", c.JSONPaths, func(v string) bool { return strings.HasPrefix(v, "$") && len(v) <= maxSelector })
+	validRules(f, p+"json_paths", c.JSONPaths, func(v string) bool {
+		if !strings.HasPrefix(v, "$") || len(v) > maxSelector {
+			return false
+		}
+		// jayway extras (.length(), .min(), =~) not supported: reject at config time.
+		_, err := jp.ParseString(v)
+		return err == nil
+	})
 	if len(c.ScriptPatterns) > maxRules {
 		f.Add(p+"script_patterns", "too_many", "Demasiados patrones")
 	}

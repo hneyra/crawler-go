@@ -19,17 +19,17 @@ func doc(t *testing.T, html string) fetch.Page {
 
 func rules(t *testing.T, cfg crawl.ExtractionConfig) extraction.Rules {
 	t.Helper()
-	r, err := extraction.Compile(cfg)
-	if err != nil {
-		t.Fatal(err)
+	r, warns := extraction.Compile(cfg)
+	if len(warns) > 0 {
+		t.Fatalf("warnings: %v", warns)
 	}
 	return r
 }
 
 func TestHTMLSelectors(t *testing.T) {
 	r := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyHTML, FieldSelectors: map[string]string{"title": "h1", "price": "span.price", "missing": ".nope"}})
-	p := r.FromPage(doc(t, `<h1>  My
-	Product </h1><span class="price">$9.99</span><span class="price">$1</span>`).Doc)
+	p := r.Extract(doc(t, `<h1>  My
+	Product </h1><span class="price">$9.99</span><span class="price">$1</span>`).Doc, nil)
 	if p["title"] != "My Product" || p["price"] != "$9.99" {
 		t.Fatalf("%v", p)
 	}
@@ -53,7 +53,7 @@ func TestScriptJSON(t *testing.T) {
 <script>
   const avisoInfo = {"units":[{"title":"Depa en San Miguel","prices":[{"amount":1500}],"pictures":[{"url":"a.jpg"},{"url":"b.jpg"}]}]};
 </script></head><body><h1>Depa</h1></body></html>`
-	p := r.FromPage(doc(t, html).Doc)
+	p := r.Extract(doc(t, html).Doc, nil)
 	if p["title"] != "Depa en San Miguel" || p["price"] != int64(1500) || p["h1"] != "Depa" {
 		t.Fatalf("%#v", p)
 	}
@@ -66,16 +66,16 @@ func TestScriptJSON(t *testing.T) {
 	}
 	// HTML strategy ignores script patterns.
 	r2 := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyHTML, ScriptPatterns: []string{`avisoInfo = (\{.*\})`}, JSONPaths: map[string]string{"title": "$.units[0].title"}})
-	if _, ok := r2.FromPage(doc(t, html).Doc)["title"]; ok {
+	if _, ok := r2.Extract(doc(t, html).Doc, nil)["title"]; ok {
 		t.Fatal("html strategy ran scripts")
 	}
 }
 
 func TestJSONLDAlwaysAndLastWins(t *testing.T) {
 	r := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyHTML, JSONPaths: map[string]string{"sku": "$.sku"}})
-	p := r.FromPage(doc(t, `<script type="application/ld+json">{"@type":"Organization"}</script>
+	p := r.Extract(doc(t, `<script type="application/ld+json">{"@type":"Organization"}</script>
 <script type="application/ld+json">{"@type":"Product","sku":"X1"}</script>
-<script type="application/ld+json">not json</script>`).Doc)
+<script type="application/ld+json">not json</script>`).Doc, nil)
 	ld, ok := p["jsonLd"].(map[string]any)
 	if !ok || ld["@type"] != "Product" || p["sku"] != "X1" {
 		t.Fatalf("%#v", p)
@@ -84,8 +84,7 @@ func TestJSONLDAlwaysAndLastWins(t *testing.T) {
 
 func TestIntercepted(t *testing.T) {
 	r := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyAJAX, JSONPaths: map[string]string{"stock": "$.stock"}})
-	p := extraction.Props{}
-	r.FromIntercepted(p, []fetch.Intercepted{
+	p := r.Extract(doc(t, "<html></html>").Doc, []fetch.Intercepted{
 		{URL: "https://api.shop.pe/v1/item?id=1", Status: 200, Body: `{"stock":3}`},
 		{URL: "https://api.shop.pe/bad", Status: 500, Body: `<html>`},
 	})
@@ -95,11 +94,44 @@ func TestIntercepted(t *testing.T) {
 	}
 }
 
-func TestCompileRejectsBadRules(t *testing.T) {
-	if _, err := extraction.Compile(crawl.ExtractionConfig{ScriptPatterns: []string{"(bad"}}); err == nil {
-		t.Fatal("bad regex")
+// bad rule dropped with warning; good ones still work (one typo must not stop the site).
+func TestCompileSkipsBadRules(t *testing.T) {
+	r, warns := extraction.Compile(crawl.ExtractionConfig{
+		DetailStrategy: crawl.StrategyHTML,
+		ScriptPatterns: []string{"(bad"},
+		JSONPaths:      map[string]string{"len": "$.items.length()", "sku": "$.sku"},
+	})
+	if len(warns) != 2 {
+		t.Fatalf("warnings %v", warns)
 	}
-	if _, err := extraction.Compile(crawl.ExtractionConfig{JSONPaths: map[string]string{"x": "$[[["}}); err == nil {
-		t.Fatal("bad jsonpath")
+	p := r.Extract(doc(t, `<script type="application/ld+json">{"sku":"A"}</script>`).Doc, nil)
+	if p["sku"] != "A" {
+		t.Fatalf("%v", p)
+	}
+}
+
+// jayway shapes: indefinite path -> list even for 1 or 0 matches.
+func TestJSONPathShapes(t *testing.T) {
+	r := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyHTML, JSONPaths: map[string]string{
+		"one": "$..sku", "none": "$..missing", "def": "$.name", "defMissing": "$.nope",
+	}})
+	p := r.Extract(doc(t, `<script type="APPLICATION/LD+JSON">{"name":"N","sku":"S"}</script>`).Doc, nil)
+	one, ok1 := p["one"].([]any)
+	none, ok2 := p["none"].([]any)
+	if !ok1 || len(one) != 1 || !ok2 || len(none) != 0 || p["def"] != "N" {
+		t.Fatalf("%#v", p)
+	}
+	if _, ok := p["defMissing"]; ok {
+		t.Fatal("definite missing set")
+	}
+}
+
+// java order: intercepted xhr first, json-ld last -> json-ld wins.
+func TestJSONLDWinsOverIntercepted(t *testing.T) {
+	r := rules(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyAJAX, JSONPaths: map[string]string{"price": "$.price"}})
+	p := r.Extract(doc(t, `<script type="application/ld+json">{"price":1}</script>`).Doc,
+		[]fetch.Intercepted{{URL: "u", Status: 200, Body: `{"price":2}`}})
+	if p["price"] != int64(1) {
+		t.Fatalf("%v", p["price"])
 	}
 }

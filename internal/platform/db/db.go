@@ -171,3 +171,10 @@ func IsCheckViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23514"
 }
+
+// IsDataException reports pg class 22 (bad encoding, out of range, invalid text...).
+// = value problem of the row, not of the database.
+func IsDataException(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && len(pgErr.Code) == 5 && pgErr.Code[:2] == "22"
+}

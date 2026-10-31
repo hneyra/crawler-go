@@ -2,6 +2,7 @@ package headless
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ func (l *Lazy) get() (*Renderer, error) {
 	}
 	r, err := New(l.Ctx, l.Opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", fetch.ErrRendererUnavailable, err)
 	}
 	l.r = r
 	return r, nil

@@ -82,3 +82,15 @@ func TestNULRejected(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestJSONPathSyntaxValidated(t *testing.T) {
+	s := crawl.Site{Name: "a", BaseURL: "https://a.pe", ExtractionConfig: crawl.DefaultExtractionConfig()}
+	s.ExtractionConfig.JSONPaths["n"] = "$.items.length()"
+	if got := fields(t, s.Validate()); got["extraction_config.json_paths"] == "" {
+		t.Fatalf("jayway function accepted: %v", got)
+	}
+	s.ExtractionConfig.JSONPaths["n"] = "$..price"
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

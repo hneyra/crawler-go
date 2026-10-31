@@ -175,6 +175,95 @@ func TestAJAXUsesRendererAndInterceptions(t *testing.T) {
 	}
 }
 
+// hostile content must not wedge the queue: +Inf numbers, latin-1 title, NUL.
+func TestHostileContentIsStoredOrFailsURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/inf":
+			_, _ = fmt.Fprint(w, `<title>x</title><script type="application/ld+json">{"big":1e400,"ok":"y"}</script>`)
+		case "/latin1":
+			w.Header().Set("Content-Type", "text/html; charset=iso-8859-1")
+			_, _ = w.Write([]byte("<title>Caf\xe9</title>"))
+		case "/rawbytes":
+			_, _ = w.Write([]byte("<html><head><meta charset=\"utf-8\"><title>bad \xff\xfe</title></head></html>"))
+		}
+	}))
+	defer srv.Close()
+	e := newEnv(t, crawl.DefaultExtractionConfig(), nil)
+	for _, p := range []string{"/inf", "/latin1", "/rawbytes"} {
+		e.add(t, srv.URL+p)
+	}
+	b, err := e.svc.ProcessBatch(context.Background(), e.site.ID)
+	if err != nil || b.Succeeded != 3 {
+		t.Fatalf("%v %+v", err, b)
+	}
+	items, _, _ := e.items.ListItems(context.Background(), e.site.ID, 1, 10)
+	titles := map[string]bool{}
+	for _, it := range items {
+		titles[it.Title] = true
+		if ld, ok := it.Properties["jsonLd"].(map[string]any); ok && (ld["big"] != nil || ld["ok"] != "y") {
+			t.Fatalf("inf not nulled: %v", ld)
+		}
+	}
+	if !titles["Café"] {
+		t.Fatalf("latin-1 not decoded: %v", titles)
+	}
+}
+
+type deadRenderer struct{}
+
+func (deadRenderer) Render(context.Context, fetch.RenderRequest) (fetch.RenderResult, error) {
+	return fetch.RenderResult{}, fmt.Errorf("%w: no chrome", fetch.ErrRendererUnavailable)
+}
+
+func (deadRenderer) ClickNavigate(context.Context, string, fetch.ClickTarget, time.Duration) (string, error) {
+	return "", fetch.ErrRendererUnavailable
+}
+
+// browser launch failure = ours: urls back to PENDING, retries untouched.
+func TestRendererUnavailableKeepsRetries(t *testing.T) {
+	e := newEnv(t, crawl.ExtractionConfig{DetailStrategy: crawl.StrategyAJAX}, deadRenderer{})
+	e.add(t, "https://s.pe/p/1")
+	e.add(t, "https://s.pe/p/2")
+	if _, err := e.svc.ProcessBatch(context.Background(), e.site.ID); !errors.Is(err, fetch.ErrRendererUnavailable) {
+		t.Fatalf("got %v", err)
+	}
+	st, _ := e.urls.SiteStats(context.Background(), e.site.ID)
+	if st.Pending != 2 || st.Failed != 0 {
+		t.Fatalf("stats %+v", st)
+	}
+}
+
+// ctx cancelled right after a url succeeded: still marked COMPLETED, not left IN_PROGRESS.
+func TestCompletedMarkedDespiteShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, "<title>x</title>")
+	}))
+	defer srv.Close()
+	e := newEnv(t, crawl.DefaultExtractionConfig(), nil)
+	e.add(t, srv.URL+"/p/1")
+	e.svc.Items = cancelAfter{ItemSink: e.items, cancel: cancel}
+	if _, err := e.svc.ProcessBatch(ctx, e.site.ID); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := e.urls.SiteStats(context.Background(), e.site.ID)
+	if st.Completed != 1 || st.InProgress != 0 {
+		t.Fatalf("stats %+v", st)
+	}
+}
+
+type cancelAfter struct {
+	extraction.ItemSink
+	cancel func()
+}
+
+func (c cancelAfter) UpsertItem(ctx context.Context, it crawl.Item) (crawl.Item, error) {
+	out, err := c.ItemSink.UpsertItem(ctx, it)
+	c.cancel()
+	return out, err
+}
+
 func TestCancelReleasesClaimed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, "<title>x</title>") }))
 	defer srv.Close()

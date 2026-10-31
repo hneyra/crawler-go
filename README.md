@@ -86,7 +86,12 @@ Toma lotes de URLs `PENDING` (`FOR UPDATE SKIP LOCKED`, varios workers no se pis
 
 JSON-LD (`<script type="application/ld+json">`) se extrae siempre como `jsonLd`. El título es la propiedad `title`
 o, si falta, el `<title>` de la página. Un item por URL: re-extraer lo actualiza.
-Fallo de una URL → `FAILED` + `retry_count`; fallo propio (disco/BD) o apagado → las URLs vuelven a `PENDING`.
+Fallo de una URL → `FAILED` + `retry_count`; fallo propio (disco/BD/Chrome que no arranca) o apagado → las URLs
+vuelven a `PENDING` sin consumir reintentos. El HTML se decodifica según su charset (latin-1 → UTF-8); contenido
+no almacenable (NUL, UTF-8 inválido, números infinitos) se limpia antes de guardar.
+`json_paths` usa la sintaxis de [ojg](https://github.com/ohler55/ojg): las funciones de Jayway (`.length()`,
+`.min()`) no están soportadas y se rechazan al validar; una ruta inválida en datos antiguos se omite con un aviso.
+Paths indefinidos (`$..x`, `[*]`, filtros) siempre devuelven lista, como Jayway. Las fechas de los snapshots son UTC.
 
 ## Desarrollo
 
