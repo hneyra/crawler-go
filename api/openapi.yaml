@@ -24,6 +24,8 @@ tags:
   - name: ops
   - name: auth
   - name: sites
+  - name: runs
+  - name: items
 
 paths:
   /healthz:
@@ -189,6 +191,110 @@ paths:
         "204": { description: "borrada" }
         "404": { $ref: "#/components/responses/Problem" }
 
+  # ---------- runs ----------
+  /api/v1/categories/{categoryId}/discover:
+    parameters:
+      - $ref: "#/components/parameters/CategoryIdParam"
+    post:
+      tags: [runs]
+      operationId: discoverCategory
+      description: Discovery de una categoría.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/discover:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: discoverSite
+      description: Discovery de todas las categorías habilitadas del sitio.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/extract:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: extractSite
+      description: Extrae todas las URLs PENDING del sitio.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/crawl:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: crawlSite
+      description: "Crawl completo: discovery de todas las categorías habilitadas y luego extracción."
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      parameters:
+        - { name: site_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ejecuciones, más recientes primero", content: { application/json: { schema: { $ref: "#/components/schemas/RunList" } } } }
+  /api/v1/runs/{runId}:
+    parameters:
+      - { name: runId, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [runs]
+      operationId: getRun
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/stats:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [runs]
+      operationId: getSiteStats
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "conteos por estado", content: { application/json: { schema: { $ref: "#/components/schemas/SiteStats" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------- items ----------
+  /api/v1/items:
+    get:
+      tags: [items]
+      operationId: listItems
+      parameters:
+        - { name: site_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "items, más recientes primero", content: { application/json: { schema: { $ref: "#/components/schemas/ItemList" } } } }
+  /api/v1/items/{itemId}:
+    parameters:
+      - { name: itemId, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [items]
+      operationId: getItem
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Item" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+
 components:
   securitySchemes:
     session:
@@ -197,6 +303,14 @@ components:
       name: crawler_session
 
   parameters:
+    PageParam:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+    PerPageParam:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
     CSRFParam:
       name: X-CSRF-Token
       in: header
@@ -369,6 +483,71 @@ components:
         link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
         link_attribute: { type: string, maxLength: 255 }
         enabled: { type: boolean }
+    RunKind:
+      type: string
+      enum: [DISCOVER_CATEGORY, DISCOVER_SITE, EXTRACT_SITE, CRAWL_SITE]
+    RunStatus:
+      type: string
+      enum: [QUEUED, RUNNING, COMPLETED, FAILED]
+    Run:
+      type: object
+      required: [id, site_id, kind, status, stats, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        category_id: { type: integer, format: int64, description: "solo DISCOVER_CATEGORY" }
+        kind: { $ref: "#/components/schemas/RunKind" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        stats:
+          type: object
+          additionalProperties: true
+          description: "`discovery` {pages,new_urls,duplicate_urls,errors,last_error}, `extraction` {claimed,succeeded,failed,last_error}, `categories`"
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    RunList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        per_page: { type: integer }
+    SiteStats:
+      type: object
+      required: [site_id, site_name, total_urls, pending, in_progress, completed, failed, extracted_items]
+      properties:
+        site_id: { type: integer, format: int64 }
+        site_name: { type: string }
+        total_urls: { type: integer, format: int64 }
+        pending: { type: integer, format: int64 }
+        in_progress: { type: integer, format: int64 }
+        completed: { type: integer, format: int64 }
+        failed: { type: integer, format: int64 }
+        extracted_items: { type: integer, format: int64 }
+        last_crawl: { type: string, format: date-time, description: "último intento de extracción" }
+    Item:
+      type: object
+      required: [id, discovered_url_id, site_id, site_name, url, title, properties, extracted_at]
+      properties:
+        id: { type: integer, format: int64 }
+        discovered_url_id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        site_name: { type: string }
+        url: { type: string }
+        title: { type: string }
+        properties: { type: object, additionalProperties: true }
+        raw_snapshot_path: { type: string }
+        extracted_at: { type: string, format: date-time }
+    ItemList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        per_page: { type: integer }
     LoginInput:
       type: object
       required: [email, password]

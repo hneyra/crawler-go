@@ -13,9 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/hneyra/crawler-go/internal/crawl"
 	"github.com/hneyra/crawler-go/internal/httpapi"
 	"github.com/hneyra/crawler-go/internal/identity"
+	"github.com/hneyra/crawler-go/internal/pipeline"
 	"github.com/hneyra/crawler-go/internal/platform/db"
 	"github.com/hneyra/crawler-go/internal/platform/dbtest"
 	"github.com/hneyra/crawler-go/internal/postgres"
@@ -31,8 +34,9 @@ type client struct {
 }
 
 type testEnv struct {
-	url string
-	ids *identity.Service
+	url  string
+	ids  *identity.Service
+	pool *pgxpool.Pool
 }
 
 const testOrigin = "http://ui.test"
@@ -46,17 +50,19 @@ func newEnv(t *testing.T) testEnv {
 		t.Fatal(err)
 	}
 	cat := crawl.Catalog{Tx: db.Runner{Pool: pool}, Sites: postgres.Sites{Pool: pool}, Categories: postgres.Categories{Pool: pool}}
+	pipe := &pipeline.Service{Tx: db.Runner{Pool: pool}, Runs: postgres.Runs{Pool: pool}, Sites: cat.Sites, Categories: cat.Categories, Jobs: postgres.JobQueue{Pool: pool}}
 	h, err := httpapi.NewHandler(&httpapi.Server{
 		Ops:      &httpapi.Ops{DB: pool, Version: "t"},
 		AuthAPI:  &httpapi.AuthAPI{Identity: ids, SessionTTL: time.Hour},
 		SitesAPI: &httpapi.SitesAPI{Catalog: cat, Sites: cat.Sites, Categories: cat.Categories},
+		RunsAPI:  &httpapi.RunsAPI{Pipeline: pipe, Runs: postgres.Runs{Pool: pool}, URLs: postgres.URLs{Pool: pool}, Items: postgres.Items{Pool: pool}},
 	}, httpapi.Options{Log: log, PublicURL: testOrigin, Sessions: ids, Limits: httpapi.NoLimits()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return testEnv{url: srv.URL, ids: ids}
+	return testEnv{url: srv.URL, ids: ids, pool: pool}
 }
 
 func (e testEnv) anon(t *testing.T) client {

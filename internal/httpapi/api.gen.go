@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -97,6 +98,54 @@ func (e PaginationType) Valid() bool {
 	case PAGEPARAM:
 		return true
 	case SCROLLAJAX:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunKind.
+const (
+	CRAWLSITE        RunKind = "CRAWL_SITE"
+	DISCOVERCATEGORY RunKind = "DISCOVER_CATEGORY"
+	DISCOVERSITE     RunKind = "DISCOVER_SITE"
+	EXTRACTSITE      RunKind = "EXTRACT_SITE"
+)
+
+// Valid indicates whether the value is a known member of the RunKind enum.
+func (e RunKind) Valid() bool {
+	switch e {
+	case CRAWLSITE:
+		return true
+	case DISCOVERCATEGORY:
+		return true
+	case DISCOVERSITE:
+		return true
+	case EXTRACTSITE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunStatus.
+const (
+	COMPLETED RunStatus = "COMPLETED"
+	FAILED    RunStatus = "FAILED"
+	QUEUED    RunStatus = "QUEUED"
+	RUNNING   RunStatus = "RUNNING"
+)
+
+// Valid indicates whether the value is a known member of the RunStatus enum.
+func (e RunStatus) Valid() bool {
+	switch e {
+	case COMPLETED:
+		return true
+	case FAILED:
+		return true
+	case QUEUED:
+		return true
+	case RUNNING:
 		return true
 	default:
 		return false
@@ -191,6 +240,27 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// Item defines model for Item.
+type Item struct {
+	DiscoveredUrlId int64                  `json:"discovered_url_id"`
+	ExtractedAt     time.Time              `json:"extracted_at"`
+	Id              int64                  `json:"id"`
+	Properties      map[string]interface{} `json:"properties"`
+	RawSnapshotPath *string                `json:"raw_snapshot_path,omitempty"`
+	SiteId          int64                  `json:"site_id"`
+	SiteName        string                 `json:"site_name"`
+	Title           string                 `json:"title"`
+	Url             string                 `json:"url"`
+}
+
+// ItemList defines model for ItemList.
+type ItemList struct {
+	Items   []Item `json:"items"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
+	Total   int64  `json:"total"`
+}
+
 // LinkExtractionType defines model for LinkExtractionType.
 type LinkExtractionType string
 
@@ -221,6 +291,37 @@ type Problem struct {
 
 // RuleMap defines model for RuleMap.
 type RuleMap map[string]string
+
+// Run defines model for Run.
+type Run struct {
+	// CategoryId solo DISCOVER_CATEGORY
+	CategoryId *int64     `json:"category_id,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Error      *string    `json:"error,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Id         int64      `json:"id"`
+	Kind       RunKind    `json:"kind"`
+	SiteId     int64      `json:"site_id"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+
+	// Stats `discovery` {pages,new_urls,duplicate_urls,errors,last_error}, `extraction` {claimed,succeeded,failed,last_error}, `categories`
+	Stats  map[string]interface{} `json:"stats"`
+	Status RunStatus              `json:"status"`
+}
+
+// RunKind defines model for RunKind.
+type RunKind string
+
+// RunList defines model for RunList.
+type RunList struct {
+	Items   []Run `json:"items"`
+	Page    int   `json:"page"`
+	PerPage int   `json:"per_page"`
+	Total   int64 `json:"total"`
+}
+
+// RunStatus defines model for RunStatus.
+type RunStatus string
 
 // Session defines model for Session.
 type Session struct {
@@ -268,6 +369,21 @@ type SitePatch struct {
 	PolitenessDelayMs *int                   `json:"politeness_delay_ms,omitempty"`
 }
 
+// SiteStats defines model for SiteStats.
+type SiteStats struct {
+	Completed      int64 `json:"completed"`
+	ExtractedItems int64 `json:"extracted_items"`
+	Failed         int64 `json:"failed"`
+	InProgress     int64 `json:"in_progress"`
+
+	// LastCrawl último intento de extracción
+	LastCrawl *time.Time `json:"last_crawl,omitempty"`
+	Pending   int64      `json:"pending"`
+	SiteId    int64      `json:"site_id"`
+	SiteName  string     `json:"site_name"`
+	TotalUrls int64      `json:"total_urls"`
+}
+
 // User defines model for User.
 type User struct {
 	Email   string `json:"email"`
@@ -280,6 +396,12 @@ type CSRFParam = string
 
 // CategoryIdParam defines model for CategoryIdParam.
 type CategoryIdParam = int64
+
+// PageParam defines model for PageParam.
+type PageParam = int
+
+// PerPageParam defines model for PerPageParam.
+type PerPageParam = int
 
 // SiteIdParam defines model for SiteIdParam.
 type SiteIdParam = int64
@@ -302,6 +424,26 @@ type UpdateCategoryParams struct {
 	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
 }
 
+// DiscoverCategoryParams defines parameters for DiscoverCategory.
+type DiscoverCategoryParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// ListItemsParams defines parameters for ListItems.
+type ListItemsParams struct {
+	SiteId  *int64        `form:"site_id,omitempty" json:"site_id,omitempty"`
+	Page    *PageParam    `form:"page,omitempty" json:"page,omitempty"`
+	PerPage *PerPageParam `form:"per_page,omitempty" json:"per_page,omitempty"`
+}
+
+// ListRunsParams defines parameters for ListRuns.
+type ListRunsParams struct {
+	SiteId  *int64        `form:"site_id,omitempty" json:"site_id,omitempty"`
+	Page    *PageParam    `form:"page,omitempty" json:"page,omitempty"`
+	PerPage *PerPageParam `form:"per_page,omitempty" json:"per_page,omitempty"`
+}
+
 // CreateSiteParams defines parameters for CreateSite.
 type CreateSiteParams struct {
 	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
@@ -322,6 +464,24 @@ type UpdateSiteParams struct {
 
 // CreateCategoryParams defines parameters for CreateCategory.
 type CreateCategoryParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// CrawlSiteParams defines parameters for CrawlSite.
+type CrawlSiteParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// DiscoverSiteParams defines parameters for DiscoverSite.
+type DiscoverSiteParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// ExtractSiteParams defines parameters for ExtractSite.
+type ExtractSiteParams struct {
 	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
 	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
 }
@@ -362,6 +522,21 @@ type ServerInterface interface {
 	// (PATCH /api/v1/categories/{categoryId})
 	UpdateCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params UpdateCategoryParams)
 
+	// (POST /api/v1/categories/{categoryId}/discover)
+	DiscoverCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params DiscoverCategoryParams)
+
+	// (GET /api/v1/items)
+	ListItems(w http.ResponseWriter, r *http.Request, params ListItemsParams)
+
+	// (GET /api/v1/items/{itemId})
+	GetItem(w http.ResponseWriter, r *http.Request, itemId int64)
+
+	// (GET /api/v1/runs)
+	ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams)
+
+	// (GET /api/v1/runs/{runId})
+	GetRun(w http.ResponseWriter, r *http.Request, runId int64)
+
 	// (GET /api/v1/sites)
 	ListSites(w http.ResponseWriter, r *http.Request)
 
@@ -382,6 +557,18 @@ type ServerInterface interface {
 
 	// (POST /api/v1/sites/{siteId}/categories)
 	CreateCategory(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params CreateCategoryParams)
+
+	// (POST /api/v1/sites/{siteId}/crawl)
+	CrawlSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params CrawlSiteParams)
+
+	// (POST /api/v1/sites/{siteId}/discover)
+	DiscoverSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params DiscoverSiteParams)
+
+	// (POST /api/v1/sites/{siteId}/extract)
+	ExtractSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params ExtractSiteParams)
+
+	// (GET /api/v1/sites/{siteId}/stats)
+	GetSiteStats(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
 
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -597,6 +784,230 @@ func (siw *ServerInterfaceWrapper) UpdateCategory(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateCategory(w, r, categoryId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DiscoverCategory operation middleware
+func (siw *ServerInterfaceWrapper) DiscoverCategory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "categoryId" -------------
+	var categoryId CategoryIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", r.PathValue("categoryId"), &categoryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "categoryId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DiscoverCategoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DiscoverCategory(w, r, categoryId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListItems operation middleware
+func (siw *ServerInterfaceWrapper) ListItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListItemsParams
+
+	// ------------- Optional query parameter "site_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "site_id", r.URL.Query(), &params.SiteId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "site_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "per_page", r.URL.Query(), &params.PerPage, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "per_page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "per_page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListItems(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItem operation middleware
+func (siw *ServerInterfaceWrapper) GetItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "itemId" -------------
+	var itemId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "itemId", r.PathValue("itemId"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "itemId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItem(w, r, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRunsParams
+
+	// ------------- Optional query parameter "site_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "site_id", r.URL.Query(), &params.SiteId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "site_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "per_page", r.URL.Query(), &params.PerPage, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "per_page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "per_page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRuns(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRun operation middleware
+func (siw *ServerInterfaceWrapper) GetRun(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "runId" -------------
+	var runId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRun(w, r, runId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -879,6 +1290,194 @@ func (siw *ServerInterfaceWrapper) CreateCategory(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// CrawlSite operation middleware
+func (siw *ServerInterfaceWrapper) CrawlSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "siteId" -------------
+	var siteId SiteIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "siteId", r.PathValue("siteId"), &siteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "siteId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CrawlSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CrawlSite(w, r, siteId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DiscoverSite operation middleware
+func (siw *ServerInterfaceWrapper) DiscoverSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "siteId" -------------
+	var siteId SiteIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "siteId", r.PathValue("siteId"), &siteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "siteId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DiscoverSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DiscoverSite(w, r, siteId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExtractSite operation middleware
+func (siw *ServerInterfaceWrapper) ExtractSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "siteId" -------------
+	var siteId SiteIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "siteId", r.PathValue("siteId"), &siteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "siteId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExtractSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExtractSite(w, r, siteId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSiteStats operation middleware
+func (siw *ServerInterfaceWrapper) GetSiteStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "siteId" -------------
+	var siteId SiteIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "siteId", r.PathValue("siteId"), &siteId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "siteId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSiteStats(w, r, siteId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
 
@@ -1042,6 +1641,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/categories/{categoryId}", wrapper.DeleteCategory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/categories/{categoryId}", wrapper.GetCategory)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/categories/{categoryId}", wrapper.UpdateCategory)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/categories/{categoryId}/discover", wrapper.DiscoverCategory)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sites/{siteId}/discover", wrapper.DiscoverSite)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sites/{siteId}/extract", wrapper.ExtractSite)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sites/{siteId}/crawl", wrapper.CrawlSite)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/runs", wrapper.ListRuns)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/runs/{runId}", wrapper.GetRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sites/{siteId}/stats", wrapper.GetSiteStats)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/items", wrapper.ListItems)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/items/{itemId}", wrapper.GetItem)
 
 	return m
 }
@@ -1423,6 +2031,250 @@ type UpdateCategorydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateCategorydefaultApplicationProblemPlusJSONResponse) VisitUpdateCategoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverCategoryRequestObject struct {
+	CategoryId CategoryIdParam `json:"categoryId"`
+	Params     DiscoverCategoryParams
+}
+
+type DiscoverCategoryResponseObject interface {
+	VisitDiscoverCategoryResponse(w http.ResponseWriter) error
+}
+
+type DiscoverCategory202JSONResponse Run
+
+func (response DiscoverCategory202JSONResponse) VisitDiscoverCategoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverCategory404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DiscoverCategory404ApplicationProblemPlusJSONResponse) VisitDiscoverCategoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverCategorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DiscoverCategorydefaultApplicationProblemPlusJSONResponse) VisitDiscoverCategoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItemsRequestObject struct {
+	Params ListItemsParams
+}
+
+type ListItemsResponseObject interface {
+	VisitListItemsResponse(w http.ResponseWriter) error
+}
+
+type ListItems200JSONResponse ItemList
+
+func (response ListItems200JSONResponse) VisitListItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItemsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListItemsdefaultApplicationProblemPlusJSONResponse) VisitListItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItemRequestObject struct {
+	ItemId int64 `json:"itemId"`
+}
+
+type GetItemResponseObject interface {
+	VisitGetItemResponse(w http.ResponseWriter) error
+}
+
+type GetItem200JSONResponse Item
+
+func (response GetItem200JSONResponse) VisitGetItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItem404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetItem404ApplicationProblemPlusJSONResponse) VisitGetItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItemdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetItemdefaultApplicationProblemPlusJSONResponse) VisitGetItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRunsRequestObject struct {
+	Params ListRunsParams
+}
+
+type ListRunsResponseObject interface {
+	VisitListRunsResponse(w http.ResponseWriter) error
+}
+
+type ListRuns200JSONResponse RunList
+
+func (response ListRuns200JSONResponse) VisitListRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRunsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListRunsdefaultApplicationProblemPlusJSONResponse) VisitListRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRunRequestObject struct {
+	RunId int64 `json:"runId"`
+}
+
+type GetRunResponseObject interface {
+	VisitGetRunResponse(w http.ResponseWriter) error
+}
+
+type GetRun200JSONResponse Run
+
+func (response GetRun200JSONResponse) VisitGetRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRun404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetRun404ApplicationProblemPlusJSONResponse) VisitGetRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRundefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetRundefaultApplicationProblemPlusJSONResponse) VisitGetRunResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1872,6 +2724,229 @@ func (response CreateCategorydefaultApplicationProblemPlusJSONResponse) VisitCre
 	return err
 }
 
+type CrawlSiteRequestObject struct {
+	SiteId SiteIdParam `json:"siteId"`
+	Params CrawlSiteParams
+}
+
+type CrawlSiteResponseObject interface {
+	VisitCrawlSiteResponse(w http.ResponseWriter) error
+}
+
+type CrawlSite202JSONResponse Run
+
+func (response CrawlSite202JSONResponse) VisitCrawlSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CrawlSite404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CrawlSite404ApplicationProblemPlusJSONResponse) VisitCrawlSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CrawlSitedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CrawlSitedefaultApplicationProblemPlusJSONResponse) VisitCrawlSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverSiteRequestObject struct {
+	SiteId SiteIdParam `json:"siteId"`
+	Params DiscoverSiteParams
+}
+
+type DiscoverSiteResponseObject interface {
+	VisitDiscoverSiteResponse(w http.ResponseWriter) error
+}
+
+type DiscoverSite202JSONResponse Run
+
+func (response DiscoverSite202JSONResponse) VisitDiscoverSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverSite404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DiscoverSite404ApplicationProblemPlusJSONResponse) VisitDiscoverSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverSitedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DiscoverSitedefaultApplicationProblemPlusJSONResponse) VisitDiscoverSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExtractSiteRequestObject struct {
+	SiteId SiteIdParam `json:"siteId"`
+	Params ExtractSiteParams
+}
+
+type ExtractSiteResponseObject interface {
+	VisitExtractSiteResponse(w http.ResponseWriter) error
+}
+
+type ExtractSite202JSONResponse Run
+
+func (response ExtractSite202JSONResponse) VisitExtractSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExtractSite404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ExtractSite404ApplicationProblemPlusJSONResponse) VisitExtractSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExtractSitedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ExtractSitedefaultApplicationProblemPlusJSONResponse) VisitExtractSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteStatsRequestObject struct {
+	SiteId SiteIdParam `json:"siteId"`
+}
+
+type GetSiteStatsResponseObject interface {
+	VisitGetSiteStatsResponse(w http.ResponseWriter) error
+}
+
+type GetSiteStats200JSONResponse SiteStats
+
+func (response GetSiteStats200JSONResponse) VisitGetSiteStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteStats404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSiteStats404ApplicationProblemPlusJSONResponse) VisitGetSiteStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteStatsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSiteStatsdefaultApplicationProblemPlusJSONResponse) VisitGetSiteStatsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthzRequestObject struct {
 }
 
@@ -1985,6 +3060,21 @@ type StrictServerInterface interface {
 	// (PATCH /api/v1/categories/{categoryId})
 	UpdateCategory(ctx context.Context, request UpdateCategoryRequestObject) (UpdateCategoryResponseObject, error)
 
+	// (POST /api/v1/categories/{categoryId}/discover)
+	DiscoverCategory(ctx context.Context, request DiscoverCategoryRequestObject) (DiscoverCategoryResponseObject, error)
+
+	// (GET /api/v1/items)
+	ListItems(ctx context.Context, request ListItemsRequestObject) (ListItemsResponseObject, error)
+
+	// (GET /api/v1/items/{itemId})
+	GetItem(ctx context.Context, request GetItemRequestObject) (GetItemResponseObject, error)
+
+	// (GET /api/v1/runs)
+	ListRuns(ctx context.Context, request ListRunsRequestObject) (ListRunsResponseObject, error)
+
+	// (GET /api/v1/runs/{runId})
+	GetRun(ctx context.Context, request GetRunRequestObject) (GetRunResponseObject, error)
+
 	// (GET /api/v1/sites)
 	ListSites(ctx context.Context, request ListSitesRequestObject) (ListSitesResponseObject, error)
 
@@ -2005,6 +3095,18 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/sites/{siteId}/categories)
 	CreateCategory(ctx context.Context, request CreateCategoryRequestObject) (CreateCategoryResponseObject, error)
+
+	// (POST /api/v1/sites/{siteId}/crawl)
+	CrawlSite(ctx context.Context, request CrawlSiteRequestObject) (CrawlSiteResponseObject, error)
+
+	// (POST /api/v1/sites/{siteId}/discover)
+	DiscoverSite(ctx context.Context, request DiscoverSiteRequestObject) (DiscoverSiteResponseObject, error)
+
+	// (POST /api/v1/sites/{siteId}/extract)
+	ExtractSite(ctx context.Context, request ExtractSiteRequestObject) (ExtractSiteResponseObject, error)
+
+	// (GET /api/v1/sites/{siteId}/stats)
+	GetSiteStats(ctx context.Context, request GetSiteStatsRequestObject) (GetSiteStatsResponseObject, error)
 
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
@@ -2220,6 +3322,137 @@ func (sh *strictHandler) UpdateCategory(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// DiscoverCategory operation middleware
+func (sh *strictHandler) DiscoverCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params DiscoverCategoryParams) {
+	var request DiscoverCategoryRequestObject
+
+	request.CategoryId = categoryId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DiscoverCategory(ctx, request.(DiscoverCategoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DiscoverCategory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiscoverCategoryResponseObject); ok {
+		if err := validResponse.VisitDiscoverCategoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListItems operation middleware
+func (sh *strictHandler) ListItems(w http.ResponseWriter, r *http.Request, params ListItemsParams) {
+	var request ListItemsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListItems(ctx, request.(ListItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListItemsResponseObject); ok {
+		if err := validResponse.VisitListItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetItem operation middleware
+func (sh *strictHandler) GetItem(w http.ResponseWriter, r *http.Request, itemId int64) {
+	var request GetItemRequestObject
+
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetItem(ctx, request.(GetItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetItemResponseObject); ok {
+		if err := validResponse.VisitGetItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRuns operation middleware
+func (sh *strictHandler) ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams) {
+	var request ListRunsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRuns(ctx, request.(ListRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRunsResponseObject); ok {
+		if err := validResponse.VisitListRunsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRun operation middleware
+func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId int64) {
+	var request GetRunRequestObject
+
+	request.RunId = runId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRun(ctx, request.(GetRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRun")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRunResponseObject); ok {
+		if err := validResponse.VisitGetRunResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListSites operation middleware
 func (sh *strictHandler) ListSites(w http.ResponseWriter, r *http.Request) {
 	var request ListSitesRequestObject
@@ -2424,6 +3657,113 @@ func (sh *strictHandler) CreateCategory(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// CrawlSite operation middleware
+func (sh *strictHandler) CrawlSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params CrawlSiteParams) {
+	var request CrawlSiteRequestObject
+
+	request.SiteId = siteId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CrawlSite(ctx, request.(CrawlSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CrawlSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CrawlSiteResponseObject); ok {
+		if err := validResponse.VisitCrawlSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DiscoverSite operation middleware
+func (sh *strictHandler) DiscoverSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params DiscoverSiteParams) {
+	var request DiscoverSiteRequestObject
+
+	request.SiteId = siteId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DiscoverSite(ctx, request.(DiscoverSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DiscoverSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiscoverSiteResponseObject); ok {
+		if err := validResponse.VisitDiscoverSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExtractSite operation middleware
+func (sh *strictHandler) ExtractSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params ExtractSiteParams) {
+	var request ExtractSiteRequestObject
+
+	request.SiteId = siteId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ExtractSite(ctx, request.(ExtractSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExtractSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ExtractSiteResponseObject); ok {
+		if err := validResponse.VisitExtractSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSiteStats operation middleware
+func (sh *strictHandler) GetSiteStats(w http.ResponseWriter, r *http.Request, siteId SiteIdParam) {
+	var request GetSiteStatsRequestObject
+
+	request.SiteId = siteId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSiteStats(ctx, request.(GetSiteStatsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSiteStats")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSiteStatsResponseObject); ok {
+		if err := validResponse.VisitGetSiteStatsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealthz operation middleware
 func (sh *strictHandler) GetHealthz(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthzRequestObject
@@ -2477,55 +3817,69 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"c3o2/e8A",
+	"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",
+	"rVebe/mj6ScqPNsYtfCFQXvh2V5azd/O/2cA",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

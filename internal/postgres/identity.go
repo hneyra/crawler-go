@@ -183,3 +183,13 @@ func (r Identity) ClearLoginFailures(ctx context.Context, email string) error {
 	}
 	return nil
 }
+
+// PurgeLoginThrottle drops rows idle since cutoff (unknown-email rows would grow forever).
+func (r Identity) PurgeLoginThrottle(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := db.Q(ctx, r.Pool).Exec(ctx,
+		`DELETE FROM login_throttle WHERE updated_at < $1 AND (locked_until IS NULL OR locked_until < now())`, before)
+	if err != nil {
+		return 0, fmt.Errorf("purge login throttle: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

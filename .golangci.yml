@@ -24,6 +24,7 @@ linters:
         - categorias
         - extraccion
         - patrones
+        - producto
   exclusions:
     generated: strict
     rules:

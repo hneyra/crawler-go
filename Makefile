@@ -55,7 +55,7 @@ tidy:
 
 # full local stack (db + migrate + api).
 up:
-	CRAWLER_VERSION=$(VERSION) docker compose up -d --build --wait db migrate api
+	CRAWLER_VERSION=$(VERSION) docker compose up -d --build --wait db migrate api worker
 
 down:
 	docker compose down
