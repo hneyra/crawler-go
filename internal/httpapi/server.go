@@ -17,6 +17,7 @@ type Server struct {
 	*Ops
 	*AuthAPI  // login, logout, session
 	*SitesAPI // sites + categories config
+	*RunsAPI  // runs, stats, items
 }
 
 var _ StrictServerInterface = (*Server)(nil)

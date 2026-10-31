@@ -10,6 +10,7 @@ import (
 	"github.com/hneyra/crawler-go/internal/httpapi"
 	"github.com/hneyra/crawler-go/internal/platform/config"
 	"github.com/hneyra/crawler-go/internal/platform/db"
+	"github.com/hneyra/crawler-go/internal/postgres"
 )
 
 // deps = shared infra for module wiring. explicit, no container.
@@ -48,6 +49,10 @@ func build(d deps) (modules, error) {
 			Ops:      &httpapi.Ops{DB: d.pool, Version: version},
 			AuthAPI:  wireAuth(d, ids),
 			SitesAPI: wireSites(d),
+			RunsAPI: &httpapi.RunsAPI{
+				Pipeline: pipelineService(d), Runs: postgres.Runs{Pool: d.pool},
+				URLs: postgres.URLs{Pool: d.pool}, Items: postgres.Items{Pool: d.pool},
+			},
 		},
 		sessions: ids,
 	}, nil

@@ -313,3 +313,66 @@ func TestURLQueueClaimFailRelease(t *testing.T) {
 		t.Fatalf("reclaim %+v", again)
 	}
 }
+
+func TestRescueStuckAndPurge(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	s := f.site(t, "a")
+	c := f.category(t, s.ID, "c", true)
+	old, fresh := f.url(t, c, 1), f.url(t, c, 2)
+	_, _ = f.pool.Exec(ctx, `UPDATE discovered_url SET status='IN_PROGRESS', last_attempt_at = now() - interval '2 hours' WHERE id=$1`, old.ID)
+	_, _ = f.pool.Exec(ctx, `UPDATE discovered_url SET status='IN_PROGRESS', last_attempt_at = now() WHERE id=$1`, fresh.ID)
+	n, err := f.urls.RescueStuck(ctx, time.Now().Add(-30*time.Minute))
+	if err != nil || n != 1 {
+		t.Fatalf("rescue: %d %v", n, err)
+	}
+	st, _ := f.urls.SiteStats(ctx, s.ID)
+	if st.Pending != 1 || st.InProgress != 1 {
+		t.Fatalf("stats %+v", st)
+	}
+	// login throttle purge keeps locked + recent rows.
+	_, _ = f.pool.Exec(ctx, `INSERT INTO login_throttle (email_norm, failures, updated_at) VALUES
+		('old', 1, now() - interval '2 days'), ('new', 1, now()), ('locked', 9, now() - interval '2 days')`)
+	_, _ = f.pool.Exec(ctx, `UPDATE login_throttle SET locked_until = now() + interval '1 hour' WHERE email_norm='locked'`)
+	if n, err := (postgres.Identity{Pool: f.pool}).PurgeLoginThrottle(ctx, time.Now().Add(-24*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("purge throttle: %d %v", n, err)
+	}
+	// finished jobs purge.
+	q := postgres.JobQueue{Pool: f.pool}
+	_, _ = f.pool.Exec(ctx, `INSERT INTO jobs (kind, status, finished_at) VALUES ('k','succeeded', now() - interval '10 days'), ('k','succeeded', now()), ('k','queued', NULL)`)
+	if n, err := q.PurgeFinished(ctx, time.Now().Add(-7*24*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("purge jobs: %d %v", n, err)
+	}
+}
+
+func TestRunsStore(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	s := f.site(t, "a")
+	runs := postgres.Runs{Pool: f.pool}
+	r, err := runs.CreateRun(ctx, crawl.Run{SiteID: s.ID, Kind: crawl.RunCrawlSite})
+	if err != nil || r.Status != crawl.RunQueued || r.CategoryID != 0 {
+		t.Fatalf("create %v %+v", err, r)
+	}
+	if _, err := runs.ActiveRun(ctx, crawl.RunCrawlSite, s.ID, 0); err != nil {
+		t.Fatalf("active: %v", err)
+	}
+	_ = runs.StartRun(ctx, r.ID)
+	if err := runs.FinishRun(ctx, r.ID, crawl.RunCompleted, map[string]any{"x": 1}, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := runs.GetRun(ctx, r.ID)
+	if got.Status != crawl.RunCompleted || got.FinishedAt == nil || got.Stats["x"] != float64(1) {
+		t.Fatalf("finished %+v", got)
+	}
+	if _, err := runs.ActiveRun(ctx, crawl.RunCrawlSite, s.ID, 0); !apperr.IsKind(err, apperr.KindNotFound) {
+		t.Fatalf("no active: %v", err)
+	}
+	if _, err := runs.CreateRun(ctx, crawl.Run{SiteID: 999, Kind: crawl.RunCrawlSite}); !apperr.IsKind(err, apperr.KindNotFound) {
+		t.Fatalf("bad site: %v", err)
+	}
+	list, total, _ := runs.ListRuns(ctx, s.ID, 1, 10)
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("list %d", total)
+	}
+}

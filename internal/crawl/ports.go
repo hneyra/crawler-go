@@ -1,6 +1,9 @@
 package crawl
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Tx = use case transaction boundary. db.Runner fits.
 type Tx interface {
@@ -54,6 +57,28 @@ type URLQueue interface {
 	// Release puts claimed-but-unprocessed urls back to PENDING (shutdown mid batch).
 	Release(ctx context.Context, ids []int64) error
 	CountPending(ctx context.Context, siteID int64) (int64, error)
+}
+
+// URLMaintenance = periodic queue repair.
+type URLMaintenance interface {
+	ResetFailed(ctx context.Context, maxRetries int) (int64, error)
+	// RescueStuck: IN_PROGRESS with last_attempt_at older than cutoff -> PENDING (worker killed mid batch).
+	RescueStuck(ctx context.Context, before time.Time) (int64, error)
+}
+
+// RunStore = crawl run persistence.
+type RunStore interface {
+	CreateRun(ctx context.Context, r Run) (Run, error)
+	GetRun(ctx context.Context, id int64) (Run, error)
+	// ActiveRun = QUEUED/RUNNING run of same kind+target. not_found if none.
+	ActiveRun(ctx context.Context, kind RunKind, siteID, categoryID int64) (Run, error)
+	SetRunJob(ctx context.Context, id, jobID int64) error
+	StartRun(ctx context.Context, id int64) error
+	UpdateRunStats(ctx context.Context, id int64, stats map[string]any) error
+	// FinishRun: COMPLETED/FAILED (terminal) or QUEUED (will retry). errMsg "" clears.
+	FinishRun(ctx context.Context, id int64, status RunStatus, stats map[string]any, errMsg string) error
+	// ListRuns newest first. siteID 0 = all.
+	ListRuns(ctx context.Context, siteID int64, page, perPage int) ([]Run, int64, error)
 }
 
 // ItemStore = extracted item persistence.

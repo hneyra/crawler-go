@@ -170,3 +170,47 @@ type SiteStats struct {
 	ExtractedItems int64
 	LastCrawl      *time.Time // max(last_attempt_at)
 }
+
+// RunKind = what a crawl run does.
+type RunKind string
+
+const (
+	RunDiscoverCategory RunKind = "DISCOVER_CATEGORY"
+	RunDiscoverSite     RunKind = "DISCOVER_SITE"
+	RunExtractSite      RunKind = "EXTRACT_SITE"
+	RunCrawlSite        RunKind = "CRAWL_SITE" // discover all enabled categories, then extract
+)
+
+// Valid reports known value.
+func (k RunKind) Valid() bool {
+	switch k {
+	case RunDiscoverCategory, RunDiscoverSite, RunExtractSite, RunCrawlSite:
+		return true
+	}
+	return false
+}
+
+// RunStatus = run lifecycle.
+type RunStatus string
+
+const (
+	RunQueued    RunStatus = "QUEUED"
+	RunRunning   RunStatus = "RUNNING"
+	RunCompleted RunStatus = "COMPLETED"
+	RunFailed    RunStatus = "FAILED"
+)
+
+// Run = one requested discover/extract/crawl. replaces spring batch job execution.
+type Run struct {
+	ID         int64
+	SiteID     int64
+	CategoryID int64 // DISCOVER_CATEGORY only; 0 otherwise
+	Kind       RunKind
+	Status     RunStatus
+	Stats      map[string]any
+	Error      string
+	JobID      int64
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+}

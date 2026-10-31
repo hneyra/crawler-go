@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -177,4 +178,16 @@ func (s URLs) CountPending(ctx context.Context, siteID int64) (int64, error) {
 		return 0, fmt.Errorf("count pending: %w", err)
 	}
 	return n, nil
+}
+
+var _ crawl.URLMaintenance = URLs{}
+
+// RescueStuck: IN_PROGRESS claimed before cutoff -> PENDING. no retry consumed (worker died, not the page).
+func (s URLs) RescueStuck(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := db.Q(ctx, s.Pool).Exec(ctx,
+		`UPDATE discovered_url SET status = 'PENDING' WHERE status = 'IN_PROGRESS' AND last_attempt_at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("rescue stuck urls: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }

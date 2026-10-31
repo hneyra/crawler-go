@@ -52,6 +52,7 @@ También se gestionan por API: `GET/POST /api/v1/sites`, `GET/PATCH/DELETE /api/
 
 ```
 crawler serve              API HTTP (+ métricas en CRAWLER_METRICS_ADDR)
+crawler worker             ejecuta los jobs (crawl runs + mantenimiento); /healthz y /metrics en CRAWLER_WORKER_HEALTH_ADDR
 crawler migrate up|status|down-to N
 crawler sync-sites [archivo]   carga sites-config.yml (upsert por nombre)
 crawler admin create|set-password|promote EMAIL
@@ -92,6 +93,29 @@ no almacenable (NUL, UTF-8 inválido, números infinitos) se limpia antes de gua
 `json_paths` usa la sintaxis de [ojg](https://github.com/ohler55/ojg): las funciones de Jayway (`.length()`,
 `.min()`) no están soportadas y se rechazan al validar; una ruta inválida en datos antiguos se omite con un aviso.
 Paths indefinidos (`$..x`, `[*]`, filtros) siempre devuelven lista, como Jayway. Las fechas de los snapshots son UTC.
+
+## Ejecuciones (jobs)
+
+La API encola y el worker ejecuta (cola en Postgres con `SKIP LOCKED`, lease + heartbeat, reintentos con backoff):
+
+| Endpoint | Ejecución |
+|---|---|
+| `POST /api/v1/categories/{id}/discover` | `DISCOVER_CATEGORY` |
+| `POST /api/v1/sites/{id}/discover` | `DISCOVER_SITE` (todas las categorías habilitadas) |
+| `POST /api/v1/sites/{id}/extract` | `EXTRACT_SITE` (lotes hasta vaciar `PENDING`) |
+| `POST /api/v1/sites/{id}/crawl` | `CRAWL_SITE` (discovery + extracción) |
+
+Responden `202` con la ejecución (`crawl_run`); pedir la misma ejecución mientras está activa devuelve la existente.
+Estado en `GET /api/v1/runs/{id}` y `GET /api/v1/runs?site_id=`; conteos en `GET /api/v1/sites/{id}/stats`;
+items en `GET /api/v1/items?site_id=&page=&per_page=` (propiedades como objeto JSON).
+
+Jobs periódicos del worker:
+- `maintenance.retry_failed` cada `CRAWLER_RETRY_INTERVAL`: `FAILED` con `retry_count < CRAWLER_RETRY_MAX` → `PENDING`.
+- `maintenance.rescue_stuck`: `IN_PROGRESS` más viejas que `CRAWLER_STUCK_AFTER` (worker muerto) → `PENDING`.
+- `maintenance.purge` cada hora: jobs terminados hace más de 7 días y filas viejas de throttle de login.
+
+Métricas Prometheus: API (`/metrics` en `CRAWLER_METRICS_ADDR`) `crawler_sites_total`, `crawler_urls{status}`,
+`crawler_items_total`, `crawler_http_*`; worker `crawler_discovery_*`, `crawler_fetch_*`, `crawler_extraction_*`.
 
 ## Desarrollo
 

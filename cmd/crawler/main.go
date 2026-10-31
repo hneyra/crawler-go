@@ -20,6 +20,7 @@ const usage = `usage: crawler <command>
 
 commands:
   serve              http api
+  worker             job runner: crawl runs + periodic maintenance
   migrate up         apply pending migrations
   migrate down-to N  roll back to version N (0 = all). dev only.
   migrate status     print db version
@@ -61,6 +62,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 	switch args[0] {
 	case "serve":
 		return serve(ctx, log)
+	case "worker":
+		return worker(ctx, log)
 	case "migrate":
 		return migrate(ctx, log, args[1:])
 	case "extract":

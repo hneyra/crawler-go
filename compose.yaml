@@ -71,6 +71,25 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # job runner: crawl runs + periodic maintenance. chrome (headless) needed only for
+  # blocked/js sites; this image has none -> see M7 headless image.
+  worker:
+    <<: *backend
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      CRAWLER_WORKER_HEALTH_ADDR: 127.0.0.1:8081
+    volumes:
+      - raw-data:/data
+    healthcheck:
+      test: ["CMD", "/crawler", "healthcheck", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 4s
+      retries: 3
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   db-data:
   raw-data:

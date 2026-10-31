@@ -14,7 +14,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/hneyra/crawler-go/internal/httpapi"
+	"github.com/hneyra/crawler-go/internal/metrics"
 	"github.com/hneyra/crawler-go/internal/platform/httpx"
+	"github.com/hneyra/crawler-go/internal/postgres"
 )
 
 func serve(ctx context.Context, log *slog.Logger) error {
@@ -30,6 +32,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	metrics.NewTotals(reg, postgres.Stats{Pool: d.pool})
 	limits := httpapi.DefaultLimits()
 	if !d.cfg.RateLimit {
 		// CRAWLER_RATE_LIMIT=off: dev/test only. config refuses prod.
