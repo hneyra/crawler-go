@@ -24,6 +24,9 @@ commands:
   migrate down-to N  roll back to version N (0 = all). dev only.
   migrate status     print db version
   sync-sites [file]  upsert sites + categories from yaml (default ./sites-config.yml)
+  admin create E     create admin user E (password: CRAWLER_ADMIN_PASSWORD or stdin)
+  admin set-password E  change password of E, revoke its sessions
+  admin promote E    grant admin to user E
   healthcheck [url]  exit 0 if url (default http://127.0.0.1:8080/readyz) answers 2xx
   version
 `
@@ -58,6 +61,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		return serve(ctx, log)
 	case "migrate":
 		return migrate(ctx, log, args[1:])
+	case "admin":
+		return admin(ctx, log, args[1:], os.Stdin)
 	case "sync-sites":
 		return syncSites(ctx, log, args[1:])
 	case "healthcheck":

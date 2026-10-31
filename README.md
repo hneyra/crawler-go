@@ -24,6 +24,18 @@ curl localhost:8080/healthz
 
 Stack completo en Docker: `make up`.
 
+### Usuario administrador
+
+La API y el panel requieren sesión de administrador (no hay registro público):
+
+```bash
+echo 'una contraseña larga' | go run ./cmd/crawler admin create admin@ejemplo.com
+# o: CRAWLER_ADMIN_PASSWORD=... crawler admin create admin@ejemplo.com
+```
+
+Login: `POST /api/v1/auth/login` deja la cookie `crawler_session`; `GET /api/v1/auth/session` devuelve el
+`csrf_token` que las operaciones POST/PATCH/DELETE deben enviar en `X-CSRF-Token`.
+
 ### Configurar sitios
 
 Mismo formato YAML que el crawler Java (ver `sites-config.example.yml`):
@@ -31,7 +43,6 @@ Mismo formato YAML que el crawler Java (ver `sites-config.example.yml`):
 ```bash
 cp sites-config.example.yml sites-config.yml
 go run ./cmd/crawler sync-sites
-curl localhost:8080/api/v1/sites
 ```
 
 También se gestionan por API: `GET/POST /api/v1/sites`, `GET/PATCH/DELETE /api/v1/sites/{id}`,
@@ -43,6 +54,7 @@ También se gestionan por API: `GET/POST /api/v1/sites`, `GET/PATCH/DELETE /api/
 crawler serve              API HTTP (+ métricas en CRAWLER_METRICS_ADDR)
 crawler migrate up|status|down-to N
 crawler sync-sites [archivo]   carga sites-config.yml (upsert por nombre)
+crawler admin create|set-password|promote EMAIL
 crawler healthcheck [url]
 crawler version
 ```
