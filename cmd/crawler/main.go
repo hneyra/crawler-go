@@ -25,6 +25,7 @@ commands:
   migrate status     print db version
   sync-sites [file]  upsert sites + categories from yaml (default ./sites-config.yml)
   discover CAT_ID    run discovery of one category now (foreground)
+  extract SITE_ID    extract all pending urls of one site now (foreground)
   admin create E     create admin user E (password: CRAWLER_ADMIN_PASSWORD or stdin)
   admin set-password E  change password of E, revoke its sessions
   admin promote E    grant admin to user E
@@ -62,6 +63,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		return serve(ctx, log)
 	case "migrate":
 		return migrate(ctx, log, args[1:])
+	case "extract":
+		return extractCmd(ctx, log, args[1:])
 	case "discover":
 		return discoverCmd(ctx, log, args[1:])
 	case "admin":
