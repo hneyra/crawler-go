@@ -1,0 +1,23 @@
+# keep build context small + secret free.
+.git
+.github
+.claude
+.idea
+.vscode
+bin
+dist
+data
+*.test
+*.out
+coverage.*
+.env
+.env.*
+*.pem
+*.key
+kubeconfig*
+infra
+docs
+web
+compose.yaml
+Makefile
+**/node_modules

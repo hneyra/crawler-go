@@ -1,0 +1,38 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+  settings:
+    gosec:
+      excludes:
+        - G104 # dup of errcheck
+    misspell:
+      # ui text + vocabulary in spanish (CLAUDE.md). english dictionary flags them.
+      ignore-rules:
+        - categoria
+        - categorias
+        - extraccion
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hneyra/crawler-go

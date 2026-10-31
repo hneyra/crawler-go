@@ -1,1 +1,42 @@
 # crawler-go
+
+Crawler web configurable por sitio, con soporte para páginas estáticas y dinámicas (AJAX/SPA). Descubre URLs de productos desde páginas de listado y extrae datos estructurados de cada producto.
+
+Port en Go de [hneyra/crawler](https://github.com/hneyra/crawler) con el stack de `costea-backend` / `costea-frontend`:
+
+| Componente | Tecnología |
+|---|---|
+| API + worker | Go 1.27, `net/http`, OpenAPI spec-first (oapi-codegen strict), pgx, goose, slog, Prometheus |
+| Render headless | chromedp (Chromium) |
+| Cola de jobs | Postgres (`FOR UPDATE SKIP LOCKED`) |
+| Base de datos | PostgreSQL 18 |
+| Panel admin | SvelteKit 3 + Svelte 5 (`web/`) |
+
+## Inicio rápido
+
+```bash
+cp .env.example .env
+make db-up
+go run ./cmd/crawler migrate up
+go run ./cmd/crawler serve
+curl localhost:8080/healthz
+```
+
+Stack completo en Docker: `make up`.
+
+## Comandos
+
+```
+crawler serve              API HTTP (+ métricas en CRAWLER_METRICS_ADDR)
+crawler migrate up|status|down-to N
+crawler healthcheck [url]
+crawler version
+```
+
+## Desarrollo
+
+- `make generate`: regenera `internal/httpapi/api.gen.go` desde `api/openapi.yaml`.
+- `make check`: gofmt, vet, golangci-lint, govulncheck.
+- `make test`: tests con Postgres real (levanta `db` con compose).
+
+Plan de trabajo: issues `[Mx.y]` agrupados por milestone (`milestone:m0` … `milestone:m7`), un PR por milestone.
