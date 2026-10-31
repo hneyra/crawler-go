@@ -65,7 +65,7 @@ sites:
 	if _, err := sitesconfig.Parse(strings.NewReader("sites:\n  - name: a\n    baseURL: https://a.pe\n")); err == nil {
 		t.Fatal("typo key accepted")
 	}
-	if _, err := sitesconfig.Parse(strings.NewReader("sites:\n  - name: a\n    categories:\n      - nmae: x\n")); err == nil {
+	if _, err := sitesconfig.Parse(strings.NewReader("sites:\n  - name: a\n    categories:\n      - nombre: x\n")); err == nil {
 		t.Fatal("category typo key accepted")
 	}
 	if f, err := sitesconfig.Parse(strings.NewReader("")); err != nil || len(f.Sites) != 0 {

@@ -23,6 +23,7 @@ linters:
         - categoria
         - categorias
         - extraccion
+        - patrones
   exclusions:
     generated: strict
     rules:
