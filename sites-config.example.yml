@@ -1,0 +1,47 @@
+# ejemplo de configuración de sitios (mismo formato que el crawler Java).
+# uso: cp sites-config.example.yml sites-config.yml && crawler sync-sites
+# sync = upsert por nombre. lo que no está en el archivo no se borra.
+sites:
+  - name: Adondevivir.com
+    baseUrl: https://www.adondevivir.com
+    enabled: true
+    politenessDelayMs: 1000
+    extractionConfig:
+      detailStrategy: SCRIPT_JSON
+      fieldSelectors:
+        title: "h1.title-h1-development"
+      scriptPatterns:
+        - "const\\s+avisoInfo\\s*=\\s*(\\{.*?\\});\\s*$"
+      jsonPaths:
+        title: "$.units[0].title"
+        generatedTitle: "$.units[0].generatedTitle"
+        description: "$.units[0].descriptionNormalized"
+        realEstateType: "$.units[0].realEstateType.name"
+        postingType: "$.units[0].postingType"
+        price: "$.units[0].priceOperationTypes[0].prices[0].amount"
+        currency: "$.units[0].priceOperationTypes[0].prices[0].currency"
+        currencyCode: "$.units[0].priceOperationTypes[0].prices[0].isoCode"
+        operationType: "$.units[0].priceOperationTypes[0].operationType.name"
+        totalArea: "$.units[0].mainFeatures.CFT100.value"
+        coveredArea: "$.units[0].mainFeatures.CFT101.value"
+        bedrooms: "$.units[0].mainFeatures.CFT2.value"
+        bathrooms: "$.units[0].mainFeatures.CFT3.value"
+        antiquity: "$.units[0].mainFeatures.CFT5.value"
+        address: "$.units[0].postingLocation.address.name"
+        neighborhood: "$.units[0].postingLocation.location.name"
+        zone: "$.units[0].postingLocation.location.parent.name"
+        city: "$.units[0].postingLocation.location.parent.parent.name"
+        latitude: "$.units[0].postingLocation.postingGeolocation.geolocation.latitude"
+        longitude: "$.units[0].postingLocation.postingGeolocation.geolocation.longitude"
+        imageUrl: "$.units[0].pictures[0].url1200x1200"
+        url: "$.units[0].url"
+        postingId: "$.units[0].postingId"
+    categories:
+      - name: alquiler-en-san-miguel
+        url: https://www.adondevivir.com/casas-o-departamentos-o-terrenos-o-oficinas-o-locales-comerciales-en-alquiler-en-san-miguel.html
+        paginationType: PAGE_PARAM
+        nextPageSelector: a[data-qa=PAGING_NEXT]
+        itemLinkSelector: div[data-to-posting]
+        linkExtractionType: DATA_ATTRIBUTE
+        linkAttribute: data-to-posting
+        enabled: true

@@ -24,11 +24,25 @@ curl localhost:8080/healthz
 
 Stack completo en Docker: `make up`.
 
+### Configurar sitios
+
+Mismo formato YAML que el crawler Java (ver `sites-config.example.yml`):
+
+```bash
+cp sites-config.example.yml sites-config.yml
+go run ./cmd/crawler sync-sites
+curl localhost:8080/api/v1/sites
+```
+
+También se gestionan por API: `GET/POST /api/v1/sites`, `GET/PATCH/DELETE /api/v1/sites/{id}`,
+`GET/POST /api/v1/sites/{id}/categories`, `GET/PATCH/DELETE /api/v1/categories/{id}` (contrato en `api/openapi.yaml`).
+
 ## Comandos
 
 ```
 crawler serve              API HTTP (+ métricas en CRAWLER_METRICS_ADDR)
 crawler migrate up|status|down-to N
+crawler sync-sites [archivo]   carga sites-config.yml (upsert por nombre)
 crawler healthcheck [url]
 crawler version
 ```

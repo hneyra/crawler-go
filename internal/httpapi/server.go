@@ -14,6 +14,7 @@ import (
 // Server = full StrictServerInterface. built from per-module handler sets.
 type Server struct {
 	*Ops
+	*SitesAPI // sites + categories config
 }
 
 var _ StrictServerInterface = (*Server)(nil)
