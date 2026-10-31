@@ -1,0 +1,29 @@
+{
+  "name": "crawler-infra",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Crawler k3s deployment (Pulumi TypeScript). See docs/guides/deploy-k3s.md.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "verify": "yarn lint && yarn typecheck && yarn test"
+  },
+  "dependencies": {
+    "@pulumi/kubernetes": "4.34.2",
+    "@pulumi/pulumi": "3.272.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.5",
+    "eslint": "10.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
