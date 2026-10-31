@@ -15,7 +15,7 @@ import (
 	"github.com/hneyra/crawler-go/internal/render/headless"
 )
 
-// chrome from CRAWLER_TEST_CHROME, else PATH. none -> skip (CI image has none yet).
+// chrome from CRAWLER_TEST_CHROME, else PATH (ubuntu-latest ships google-chrome). none -> skip.
 func chromePath(t *testing.T) string {
 	t.Helper()
 	if p := os.Getenv("CRAWLER_TEST_CHROME"); p != "" {

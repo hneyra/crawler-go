@@ -121,6 +121,7 @@ func (s *Service) discoverPages(ctx context.Context, log *slog.Logger, site craw
 			log.Warn("discovery fetch failed; stopping category", "url", current, "err", err)
 			break
 		}
+		visited[key(page.URL)] = true // final url after redirects
 		if err := s.storeLinks(ctx, page, cat, &res); err != nil {
 			return res, err
 		}
@@ -128,6 +129,10 @@ func (s *Service) discoverPages(ctx context.Context, log *slog.Logger, site craw
 		if next != "" && visited[key(next)] {
 			// href points back (js pagination, "#"): real browser click.
 			next = s.clickNext(ctx, log, page, cat, &res)
+			if next != "" && visited[key(next)] {
+				// click only moved the fragment / same page: nothing new to walk.
+				next = ""
+			}
 		}
 		current = next
 		if current != "" && res.Pages < s.maxPages() {

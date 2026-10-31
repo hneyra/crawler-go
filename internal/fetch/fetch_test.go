@@ -133,3 +133,25 @@ func TestIsChallenge(t *testing.T) {
 		}
 	}
 }
+
+func TestBaseURLAfterRedirectAndBaseHref(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/alquiler", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/alquiler/", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/alquiler/", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`<a href="p/1">x</a>`)) })
+	mux.HandleFunc("/based", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><head><base href="/catalogo/"></head><body><a href="p/2">x</a></body></html>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	f := &fetch.HTTPFetcher{UserAgent: "Mozilla/5.0"}
+	p, err := f.Fetch(context.Background(), srv.URL+"/alquiler", "")
+	if err != nil || p.URL != srv.URL+"/alquiler/" || p.Doc.Url.String() != srv.URL+"/alquiler/" {
+		t.Fatalf("redirect base: %v %q %v", err, p.URL, p.Doc.Url)
+	}
+	p, err = f.Fetch(context.Background(), srv.URL+"/based", "")
+	if err != nil || p.Doc.Url.String() != srv.URL+"/catalogo/" {
+		t.Fatalf("base href: %v %v", err, p.Doc.Url)
+	}
+}

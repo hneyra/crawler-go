@@ -4,6 +4,7 @@ package headless
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,6 +27,8 @@ type Options struct {
 	UserAgent  string
 	// MaxBodyBytes caps each intercepted response body. default 4 MiB.
 	MaxBodyBytes int
+	// MaxDOMBytes caps rendered html. default 16 MiB (same as plain fetch).
+	MaxDOMBytes int
 	// Log gets cdp protocol noise at debug (new chrome events unknown to pinned cdproto). nil = discard.
 	Log *slog.Logger
 }
@@ -40,10 +43,13 @@ type Renderer struct {
 
 var _ fetch.Renderer = (*Renderer)(nil)
 
-// New starts chrome. ctx bounds browser lifetime.
+// New starts chrome. ctx only bounds startup; browser lives until Close (or crash: see Alive).
 func New(ctx context.Context, o Options) (*Renderer, error) {
 	if o.MaxBodyBytes <= 0 {
 		o.MaxBodyBytes = 4 << 20
+	}
+	if o.MaxDOMBytes <= 0 {
+		o.MaxDOMBytes = 16 << 20
 	}
 	flags := append(chromedp.DefaultExecAllocatorOptions[:0:0], chromedp.DefaultExecAllocatorOptions[:]...)
 	flags = append(flags,
@@ -76,6 +82,9 @@ func New(ctx context.Context, o Options) (*Renderer, error) {
 	}
 	return &Renderer{opts: o, allocClose: allocClose, browser: browser, browserEnd: browserEnd}, nil
 }
+
+// Alive reports browser still usable (crash/oom kill cancels its ctx).
+func (r *Renderer) Alive() bool { return r.browser.Err() == nil }
 
 // Close stops chrome.
 func (r *Renderer) Close() {
@@ -110,6 +119,7 @@ func GlobRegexp(glob string) (*regexp.Regexp, error) {
 
 type capture struct {
 	mu       sync.Mutex
+	closed   bool // set before wg.Wait: no new Add after (Add during Wait = panic)
 	wg       sync.WaitGroup
 	patterns []*regexp.Regexp
 	pending  map[network.RequestID]fetch.Intercepted
@@ -140,12 +150,13 @@ func (c *capture) listen(tctx context.Context) {
 			c.mu.Lock()
 			it, ok := c.pending[e.RequestID]
 			delete(c.pending, e.RequestID)
-			c.mu.Unlock()
-			if !ok {
+			if !ok || c.closed {
+				c.mu.Unlock()
 				return
 			}
 			// listener must not block: fetch body on own goroutine. ends with tab ctx.
 			c.wg.Add(1)
+			c.mu.Unlock()
 			go func() {
 				defer c.wg.Done()
 				var body []byte
@@ -203,7 +214,13 @@ func (r *Renderer) Render(ctx context.Context, req fetch.RenderRequest) (fetch.R
 	if err := chromedp.Run(tctx, chromedp.Evaluate(`document.documentElement.outerHTML`, &html)); err != nil {
 		return fetch.RenderResult{}, fmt.Errorf("read dom %s: %w", req.URL, err)
 	}
-	// let in-flight body reads finish (bounded by tab deadline).
+	if len(html) > r.opts.MaxDOMBytes {
+		return fetch.RenderResult{}, fmt.Errorf("render %s: dom larger than %d bytes", req.URL, r.opts.MaxDOMBytes)
+	}
+	// let in-flight body reads finish (bounded by tab deadline). late responses dropped.
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
 	waitGroup(tctx, &c.wg)
 	c.mu.Lock()
 	out := append([]fetch.Intercepted(nil), c.done...)
@@ -300,7 +317,7 @@ const clickJS = `((sel, text) => {
   if (!el) return false;
   el.setAttribute("data-crawler-click", "1");
   return true;
-})(%q, %q)`
+})(%s, %s)`
 
 // ClickNavigate opens url, clicks target, waits for location change.
 func (r *Renderer) ClickNavigate(ctx context.Context, rawURL string, target fetch.ClickTarget, timeout time.Duration) (string, error) {
@@ -313,7 +330,9 @@ func (r *Renderer) ClickNavigate(ctx context.Context, rawURL string, target fetc
 	waitChallenge(tctx, min(15*time.Second, time.Until(deadline)))
 	var found bool
 	for end := time.Now().Add(min(10*time.Second, time.Until(deadline))); ; {
-		if err := chromedp.Run(tctx, chromedp.Evaluate(fmt.Sprintf(clickJS, target.Selector, target.Text), &found)); err != nil {
+		sel, _ := json.Marshal(target.Selector) // json string = valid js string literal
+		txt, _ := json.Marshal(target.Text)
+		if err := chromedp.Run(tctx, chromedp.Evaluate(fmt.Sprintf(clickJS, sel, txt), &found)); err != nil {
 			return "", fmt.Errorf("find click target: %w", err)
 		}
 		if found || time.Now().After(end) {

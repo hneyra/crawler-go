@@ -14,6 +14,8 @@ var ErrInvalid = errors.New("invalid url")
 
 // Normalize: trim, drop fragment only. query + order kept, no case change, no slash change.
 // dedupe key for discovered urls -> must stay stable.
+// note: go keeps %XX escapes and escapes non-ascii; java URI decoded them. hashes of accented
+// urls differ from java rows -> do not import java discovered_url hashes as-is.
 func Normalize(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme == "" || u.Host == "" {

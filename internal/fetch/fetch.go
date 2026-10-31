@@ -105,7 +105,7 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, rawURL, waitSelector string) (P
 }
 
 func (f *HTTPFetcher) fetch(ctx context.Context, rawURL, waitSelector string) (Page, error) {
-	html, status, err := f.get(ctx, rawURL)
+	html, finalURL, status, err := f.get(ctx, rawURL)
 	if err != nil {
 		return Page{}, err
 	}
@@ -115,7 +115,8 @@ func (f *HTTPFetcher) fetch(ctx context.Context, rawURL, waitSelector string) (P
 	if status < 200 || status > 299 {
 		return Page{}, &StatusError{URL: rawURL, Status: status}
 	}
-	p, err := NewPage(rawURL, html, false)
+	// base = url after redirects (jsoup parity): /list -> /list/ changes relative links.
+	p, err := NewPage(finalURL, html, false)
 	if err != nil {
 		return Page{}, err
 	}
@@ -125,7 +126,8 @@ func (f *HTTPFetcher) fetch(ctx context.Context, rawURL, waitSelector string) (P
 	return p, nil
 }
 
-func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, int, error) {
+// get returns body, final url (after redirects), status.
+func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, string, int, error) {
 	timeout := f.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -134,7 +136,7 @@ func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, int, erro
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", 0, fmt.Errorf("build request %s: %w", rawURL, err)
+		return "", "", 0, fmt.Errorf("build request %s: %w", rawURL, err)
 	}
 	req.Header.Set("User-Agent", f.UserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -145,7 +147,7 @@ func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, int, erro
 	}
 	res, err := client.Do(req) //nolint:gosec // G107: crawling arbitrary configured urls is the job
 	if err != nil {
-		return "", 0, fmt.Errorf("GET %s: %w", rawURL, err)
+		return "", "", 0, fmt.Errorf("GET %s: %w", rawURL, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 	limit := f.MaxBytes
@@ -154,12 +156,16 @@ func (f *HTTPFetcher) get(ctx context.Context, rawURL string) (string, int, erro
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		return "", 0, fmt.Errorf("read %s: %w", rawURL, err)
+		return "", "", 0, fmt.Errorf("read %s: %w", rawURL, err)
 	}
 	if int64(len(body)) > limit {
-		return "", 0, fmt.Errorf("GET %s: body larger than %d bytes", rawURL, limit)
+		return "", "", 0, fmt.Errorf("GET %s: body larger than %d bytes", rawURL, limit)
 	}
-	return string(body), res.StatusCode, nil
+	final := rawURL
+	if res.Request != nil && res.Request.URL != nil {
+		final = res.Request.URL.String()
+	}
+	return string(body), final, res.StatusCode, nil
 }
 
 // ErrNoRenderer = blocked page and no headless fallback configured.
@@ -181,7 +187,7 @@ func (f *HTTPFetcher) render(ctx context.Context, rawURL, waitSelector, why stri
 	return NewPage(rawURL, res.HTML, true)
 }
 
-// NewPage parses html with base url.
+// NewPage parses html. Doc.Url = link base: <base href> resolved against rawURL, else rawURL.
 func NewPage(rawURL, html string, rendered bool) (Page, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
@@ -189,6 +195,11 @@ func NewPage(rawURL, html string, rendered bool) (Page, error) {
 	}
 	if u, err := url.Parse(rawURL); err == nil {
 		doc.Url = u
+		if href, ok := doc.Find("base[href]").First().Attr("href"); ok && strings.TrimSpace(href) != "" {
+			if b, err := u.Parse(strings.TrimSpace(href)); err == nil && (b.Scheme == "http" || b.Scheme == "https") {
+				doc.Url = b
+			}
+		}
 	}
 	return Page{URL: rawURL, HTML: html, Doc: doc, Rendered: rendered}, nil
 }

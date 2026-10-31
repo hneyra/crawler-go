@@ -227,3 +227,32 @@ func TestStorageErrorIsReturned(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestRelativeLinksUseRedirectedBase(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/alquiler", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/alquiler/", http.StatusFound) })
+	mux.HandleFunc("/alquiler/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<a class="item" href="p/1">x</a>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	sink := &memSink{}
+	s, _ := svc(nil, sink)
+	if _, err := s.DiscoverCategory(context.Background(), site, cat(srv.URL+"/alquiler")); err != nil {
+		t.Fatal(err)
+	}
+	if !sink.has(srv.URL + "/alquiler/p/1") {
+		t.Fatalf("stored %+v", sink.urls)
+	}
+}
+
+func TestFragmentOnlyClickStops(t *testing.T) {
+	srv := pages(t, map[string]string{"/list": `<a class="item" href="/p/1">1</a><a href="#">Siguiente</a>`})
+	r := &fakeRenderer{}
+	s, _ := svc(r, &memSink{})
+	r.clickTo = srv.URL + "/list#page2"
+	res, _ := s.DiscoverCategory(context.Background(), site, cat(srv.URL+"/list"))
+	if res.Pages != 1 || len(r.clicks) != 1 {
+		t.Fatalf("looped: %+v clicks=%d", res, len(r.clicks))
+	}
+}
