@@ -70,3 +70,15 @@ func TestApplyPatch(t *testing.T) {
 		t.Fatalf("patch: %+v", got)
 	}
 }
+
+func TestNULRejected(t *testing.T) {
+	s := crawl.Site{Name: "a", BaseURL: "https://a.pe", ExtractionConfig: crawl.DefaultExtractionConfig()}
+	s.ExtractionConfig.JSONPaths["k"] = "$.a\x00"
+	if got := fields(t, s.Validate()); got["body"] != "invalid_char" {
+		t.Fatalf("got %v", got)
+	}
+	c := crawl.Category{Name: "c", URL: "https://x.pe", PaginationType: crawl.PaginationCursor, ItemLinkSelector: "a\x00", LinkExtractionType: crawl.LinkHref}
+	if got := fields(t, c.Validate()); got["body"] != "invalid_char" {
+		t.Fatalf("got %v", got)
+	}
+}

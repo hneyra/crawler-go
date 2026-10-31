@@ -28,13 +28,14 @@ CREATE TABLE category (
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT category_site_name_key UNIQUE (site_id, name),
+    CONSTRAINT category_id_site_key UNIQUE (id, site_id), -- target of composite fk below
     CONSTRAINT category_link_attribute_required CHECK (link_extraction_type <> 'DATA_ATTRIBUTE' OR link_attribute IS NOT NULL)
 );
 
 CREATE TABLE discovered_url (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    site_id         BIGINT      NOT NULL REFERENCES site(id) ON DELETE CASCADE,
-    category_id     BIGINT      NOT NULL REFERENCES category(id) ON DELETE CASCADE,
+    site_id         BIGINT      NOT NULL,
+    category_id     BIGINT      NOT NULL,
     url             TEXT        NOT NULL CHECK (length(url) BETWEEN 1 AND 2048),
     url_hash        CHAR(64)    NOT NULL,
     status          TEXT        NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED')),
@@ -42,20 +43,24 @@ CREATE TABLE discovered_url (
     last_attempt_at TIMESTAMPTZ,
     last_error      TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT discovered_url_hash_key UNIQUE (url_hash)
+    CONSTRAINT discovered_url_hash_key UNIQUE (url_hash),
+    CONSTRAINT discovered_url_id_site_key UNIQUE (id, site_id),
+    -- url site = its category's site. no cross-site rows.
+    CONSTRAINT discovered_url_category_fk FOREIGN KEY (category_id, site_id) REFERENCES category (id, site_id) ON DELETE CASCADE
 );
 CREATE INDEX discovered_url_site_status_idx ON discovered_url (site_id, status, id);
 CREATE INDEX discovered_url_category_idx ON discovered_url (category_id);
 
 CREATE TABLE extracted_item (
     id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    discovered_url_id BIGINT      NOT NULL REFERENCES discovered_url(id) ON DELETE CASCADE,
-    site_id           BIGINT      NOT NULL REFERENCES site(id) ON DELETE CASCADE,
+    discovered_url_id BIGINT      NOT NULL,
+    site_id           BIGINT      NOT NULL,
     title             TEXT        NOT NULL,
     properties        JSONB       NOT NULL DEFAULT '{}'::jsonb,
     raw_snapshot_path TEXT,
     extracted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT extracted_item_url_key UNIQUE (discovered_url_id)
+    CONSTRAINT extracted_item_url_key UNIQUE (discovered_url_id),
+    CONSTRAINT extracted_item_url_fk FOREIGN KEY (discovered_url_id, site_id) REFERENCES discovered_url (id, site_id) ON DELETE CASCADE
 );
 CREATE INDEX extracted_item_site_extracted_idx ON extracted_item (site_id, extracted_at DESC, id DESC);
 CREATE INDEX extracted_item_extracted_idx ON extracted_item (extracted_at DESC, id DESC);

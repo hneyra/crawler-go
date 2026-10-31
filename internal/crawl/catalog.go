@@ -98,7 +98,7 @@ func (c Catalog) CreateSite(ctx context.Context, s Site) (Site, error) {
 func (c Catalog) UpdateSite(ctx context.Context, id int64, p SitePatch) (Site, error) {
 	var out Site
 	err := c.Tx.InTx(ctx, func(ctx context.Context) error {
-		cur, err := c.Sites.GetSite(ctx, id)
+		cur, err := c.Sites.GetSiteForUpdate(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (c Catalog) CreateCategory(ctx context.Context, cat Category) (Category, er
 func (c Catalog) UpdateCategory(ctx context.Context, id int64, p CategoryPatch) (Category, error) {
 	var out Category
 	err := c.Tx.InTx(ctx, func(ctx context.Context) error {
-		cur, err := c.Categories.GetCategory(ctx, id)
+		cur, err := c.Categories.GetCategoryForUpdate(ctx, id)
 		if err != nil {
 			return err
 		}

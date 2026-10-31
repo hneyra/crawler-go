@@ -76,11 +76,11 @@ func (s Items) GetItem(ctx context.Context, id int64) (crawl.Item, error) {
 func (s Items) ListItems(ctx context.Context, siteID int64, page, perPage int) ([]crawl.Item, int64, error) {
 	q := db.Q(ctx, s.Pool)
 	var total int64
-	if err := q.QueryRow(ctx, `SELECT count(*) FROM extracted_item WHERE ($1 = 0 OR site_id = $1)`, siteID).Scan(&total); err != nil {
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM extracted_item WHERE ($1::bigint = 0 OR site_id = $1)`, siteID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count items: %w", err)
 	}
 	rows, err := q.Query(ctx,
-		itemSelect+` WHERE ($1 = 0 OR i.site_id = $1) ORDER BY i.extracted_at DESC, i.id DESC LIMIT $2 OFFSET $3`,
+		itemSelect+` WHERE ($1::bigint = 0 OR i.site_id = $1) ORDER BY i.extracted_at DESC, i.id DESC LIMIT $2 OFFSET $3`,
 		siteID, perPage, (page-1)*perPage)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list items: %w", err)

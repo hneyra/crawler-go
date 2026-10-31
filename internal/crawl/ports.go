@@ -11,6 +11,8 @@ type Tx interface {
 type SiteStore interface {
 	ListSites(ctx context.Context) ([]Site, error)
 	GetSite(ctx context.Context, id int64) (Site, error)
+	// GetSiteForUpdate locks row until tx end. read-modify-write without lost updates.
+	GetSiteForUpdate(ctx context.Context, id int64) (Site, error)
 	GetSiteByName(ctx context.Context, name string) (Site, error)
 	CreateSite(ctx context.Context, s Site) (Site, error)
 	UpdateSite(ctx context.Context, s Site) (Site, error)
@@ -22,6 +24,8 @@ type CategoryStore interface {
 	ListCategories(ctx context.Context, siteID int64) ([]Category, error)
 	EnabledCategories(ctx context.Context, siteID int64) ([]Category, error)
 	GetCategory(ctx context.Context, id int64) (Category, error)
+	// GetCategoryForUpdate locks row until tx end.
+	GetCategoryForUpdate(ctx context.Context, id int64) (Category, error)
 	GetCategoryByName(ctx context.Context, siteID int64, name string) (Category, error)
 	CreateCategory(ctx context.Context, c Category) (Category, error)
 	UpdateCategory(ctx context.Context, c Category) (Category, error)

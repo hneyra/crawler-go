@@ -68,6 +68,16 @@ sites:
 	if _, err := sitesconfig.Parse(strings.NewReader("sites:\n  - name: a\n    categories:\n      - nombre: x\n")); err == nil {
 		t.Fatal("category typo key accepted")
 	}
+	for name, y := range map[string]string{
+		"dup site":     "sites:\n  - {name: a, baseUrl: https://a.pe}\n  - {name: \"a \", baseUrl: https://b.pe}\n",
+		"dup category": "sites:\n  - name: a\n    categories:\n      - {name: c}\n      - {name: c}\n",
+		"multi doc":    "sites: []\n---\nsites: []\n",
+		"too big":      "sites: []\n" + strings.Repeat("#", 4<<20),
+	} {
+		if _, err := sitesconfig.Parse(strings.NewReader(y)); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
 	if f, err := sitesconfig.Parse(strings.NewReader("")); err != nil || len(f.Sites) != 0 {
 		t.Fatalf("empty: %v %+v", err, f)
 	}
@@ -86,7 +96,7 @@ func TestSyncIsIdempotentUpsert(t *testing.T) {
 	}
 	v1 := parse(`
 sites:
-  - name: a
+  - name: "a "
     baseUrl: https://a.pe
     categories:
       - {name: c1, url: "https://a.pe/1", itemLinkSelector: a}

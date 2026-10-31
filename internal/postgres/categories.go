@@ -81,6 +81,15 @@ func (c Categories) GetCategory(ctx context.Context, id int64) (crawl.Category, 
 	return cat, nil
 }
 
+// GetCategoryForUpdate = GetCategory + row lock. call inside tx.
+func (c Categories) GetCategoryForUpdate(ctx context.Context, id int64) (crawl.Category, error) {
+	cat, err := scanCategory(db.Q(ctx, c.Pool).QueryRow(ctx, `SELECT `+categoryCols+` FROM category WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return crawl.Category{}, categoryNotFound(err)
+	}
+	return cat, nil
+}
+
 // GetCategoryByName within site.
 func (c Categories) GetCategoryByName(ctx context.Context, siteID int64, name string) (crawl.Category, error) {
 	cat, err := scanCategory(db.Q(ctx, c.Pool).QueryRow(ctx,

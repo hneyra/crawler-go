@@ -215,6 +215,7 @@ components:
         intercept_patterns: { $ref: "#/components/schemas/PatternList" }
     ExtractionConfigInput:
       type: object
+      additionalProperties: false
       description: Campos omitidos = vacíos; `detail_strategy` omitido = HTML.
       properties:
         detail_strategy: { $ref: "#/components/schemas/DetailStrategy" }

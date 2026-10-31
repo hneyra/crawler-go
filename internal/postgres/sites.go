@@ -68,6 +68,15 @@ func (s Sites) GetSite(ctx context.Context, id int64) (crawl.Site, error) {
 	return site, nil
 }
 
+// GetSiteForUpdate = GetSite + row lock. call inside tx.
+func (s Sites) GetSiteForUpdate(ctx context.Context, id int64) (crawl.Site, error) {
+	site, err := scanSite(db.Q(ctx, s.Pool).QueryRow(ctx, `SELECT `+siteCols+` FROM site WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return crawl.Site{}, siteNotFound(err)
+	}
+	return site, nil
+}
+
 // GetSiteByName exact match.
 func (s Sites) GetSiteByName(ctx context.Context, name string) (crawl.Site, error) {
 	site, err := scanSite(db.Q(ctx, s.Pool).QueryRow(ctx, `SELECT `+siteCols+` FROM site WHERE name = $1`, name))

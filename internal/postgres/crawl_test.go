@@ -10,6 +10,7 @@ import (
 
 	"github.com/hneyra/crawler-go/internal/apperr"
 	"github.com/hneyra/crawler-go/internal/crawl"
+	"github.com/hneyra/crawler-go/internal/platform/db"
 	"github.com/hneyra/crawler-go/internal/platform/dbtest"
 	"github.com/hneyra/crawler-go/internal/postgres"
 )
@@ -164,6 +165,14 @@ func TestURLsDedupeStatsAndRetry(t *testing.T) {
 	if len(limited) != 0 {
 		t.Fatalf("limit 0: %d", len(limited))
 	}
+	// url site must match its category's site.
+	other := f.site(t, "other")
+	if _, err := f.urls.InsertURL(ctx, crawl.DiscoveredURL{SiteID: other.ID, CategoryID: c.ID, URL: "x", URLHash: fmt.Sprintf("%064d", 99)}); err == nil {
+		t.Fatal("cross-site url accepted")
+	}
+	if items, total, err := f.items.ListItems(ctx, 1<<40, 1, 10); err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("big site id: %v %d", err, total)
+	}
 	if _, err := f.urls.SiteStats(ctx, 9999); !apperr.IsKind(err, apperr.KindNotFound) {
 		t.Fatalf("stats missing site: %v", err)
 	}
@@ -214,5 +223,26 @@ func TestItemsUpsertAndOrdering(t *testing.T) {
 	}
 	if _, err := f.items.GetItem(ctx, 9999); !apperr.IsKind(err, apperr.KindNotFound) {
 		t.Fatalf("missing item: %v", err)
+	}
+}
+
+// concurrent patches of different fields both survive (row lock, no lost update).
+func TestConcurrentSitePatchesNoLostUpdate(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	s := f.site(t, "a")
+	cat := crawl.Catalog{Tx: db.Runner{Pool: f.pool}, Sites: f.sites, Categories: f.cats}
+	off, delay := false, 5000
+	errs := make(chan error, 2)
+	go func() { _, err := cat.UpdateSite(ctx, s.ID, crawl.SitePatch{Enabled: &off}); errs <- err }()
+	go func() { _, err := cat.UpdateSite(ctx, s.ID, crawl.SitePatch{PolitenessDelayMs: &delay}); errs <- err }()
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := f.sites.GetSite(ctx, s.ID)
+	if got.Enabled || got.PolitenessDelayMs != 5000 {
+		t.Fatalf("lost update: %+v", got)
 	}
 }

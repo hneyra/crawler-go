@@ -103,6 +103,14 @@ func TestSitesCRUDOverHTTP(t *testing.T) {
 	if st := c.do("POST", "/api/v1/sites", map[string]any{"name": "x", "base_url": "https://x.pe", "extra": 1}, nil); st != 400 {
 		t.Fatalf("unknown field: %d", st)
 	}
+	// camelCase (yaml) keys inside extraction_config must not silently reset rules.
+	if st := c.do("PATCH", fmt.Sprintf("/api/v1/sites/%d", site.Id), map[string]any{"extraction_config": map[string]any{"detailStrategy": "HTML"}}, nil); st != 400 {
+		t.Fatalf("unknown config key: %d", st)
+	}
+	p = problem{}
+	if st := c.do("POST", "/api/v1/sites", map[string]any{"name": "nul\u0000", "base_url": "https://x.pe"}, &p); st != 400 {
+		t.Fatalf("nul byte: %d %+v", st, p)
+	}
 
 	var up httpapi.Site
 	if st := c.do("PATCH", fmt.Sprintf("/api/v1/sites/%d", site.Id), map[string]any{"enabled": false}, &up); st != 200 || up.Enabled || up.Name != "Adondevivir" || len(up.ExtractionConfig.ScriptPatterns) != 1 {
@@ -148,6 +156,11 @@ func TestCategoriesCRUDOverHTTP(t *testing.T) {
 	path := fmt.Sprintf("/api/v1/categories/%d", cat.Id)
 	if st := c.do("PATCH", path, map[string]any{"pagination_type": "SCROLL_AJAX", "next_page_selector": "a.next"}, &up); st != 200 || up.PaginationType != httpapi.SCROLLAJAX || up.NextPageSelector == nil || *up.NextPageSelector != "a.next" || up.Name != "celulares" {
 		t.Fatalf("patch: %d %+v", st, up)
+	}
+	// "" clears optional selector.
+	var cleared httpapi.Category
+	if st := c.do("PATCH", path, map[string]any{"next_page_selector": ""}, &cleared); st != 200 || cleared.NextPageSelector != nil {
+		t.Fatalf("clear selector: %d %+v", st, cleared)
 	}
 	var list httpapi.CategoryList
 	if st := c.do("GET", base, nil, &list); st != 200 || len(list.Items) != 1 {

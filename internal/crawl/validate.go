@@ -26,9 +26,34 @@ func AbsoluteHTTPURL(s string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
+// hasNUL: postgres text/jsonb reject \x00 -> 500. refuse as 400 first.
+func hasNUL(ss ...string) bool {
+	for _, s := range ss {
+		if strings.ContainsRune(s, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func configHasNUL(c ExtractionConfig) bool {
+	all := append(append([]string{string(c.DetailStrategy)}, c.ScriptPatterns...), c.InterceptPatterns...)
+	for k, v := range c.FieldSelectors {
+		all = append(all, k, v)
+	}
+	for k, v := range c.JSONPaths {
+		all = append(all, k, v)
+	}
+	return hasNUL(all...)
+}
+
 // Validate checks site fields. all errors at once.
 func (s Site) Validate() error {
 	var f apperr.Fields
+	if hasNUL(s.Name, s.BaseURL) || configHasNUL(s.ExtractionConfig) {
+		f.Add("body", "invalid_char", "Texto con caracteres no permitidos")
+		return f.Err("invalid_site", "Sitio inválido")
+	}
 	s.validateInto(&f)
 	return f.Err("invalid_site", "Sitio inválido")
 }
@@ -94,6 +119,10 @@ func validRules(f *apperr.Fields, field string, m map[string]string, ok func(str
 // Validate checks category fields. all errors at once.
 func (c Category) Validate() error {
 	var f apperr.Fields
+	if hasNUL(c.Name, c.URL, string(c.PaginationType), c.ItemLinkSelector, c.NextPageSelector, string(c.LinkExtractionType), c.LinkAttribute) {
+		f.Add("body", "invalid_char", "Texto con caracteres no permitidos")
+		return f.Err("invalid_category", "Categoría inválida")
+	}
 	if n := strings.TrimSpace(c.Name); n == "" || len(n) > maxName {
 		f.Add("name", "invalid_name", "Nombre requerido (máx. 255)")
 	}

@@ -8,12 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/hneyra/crawler-go/internal/apperr"
 	"github.com/hneyra/crawler-go/internal/crawl"
 )
+
+const maxFileBytes = 4 << 20
 
 // File = root of sites-config.yml.
 type File struct {
@@ -54,9 +57,12 @@ type CategoryDef struct {
 
 // Parse reads yaml. strict: unknown keys fail (typo = silent misconfig otherwise).
 func Parse(r io.Reader) (File, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, 4<<20))
+	raw, err := io.ReadAll(io.LimitReader(r, maxFileBytes+1))
 	if err != nil {
 		return File{}, fmt.Errorf("read sites config: %w", err)
+	}
+	if len(raw) > maxFileBytes {
+		return File{}, fmt.Errorf("sites config larger than %d bytes", maxFileBytes)
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
@@ -64,9 +70,30 @@ func Parse(r io.Reader) (File, error) {
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
 		return File{}, fmt.Errorf("parse sites config: %w", err)
 	}
-	for _, s := range f.Sites {
+	// one document only. a second one would be silently ignored.
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return File{}, fmt.Errorf("parse sites config: multiple yaml documents not supported")
+	}
+	sites := map[string]bool{}
+	for i, s := range f.Sites {
 		if len(s.Extra) > 0 {
 			return File{}, fmt.Errorf("parse sites config: site %q: unknown keys", s.Name)
+		}
+		// names stored trimmed -> compare trimmed. dup = ambiguous last-wins.
+		f.Sites[i].Name = strings.TrimSpace(s.Name)
+		if sites[f.Sites[i].Name] {
+			return File{}, fmt.Errorf("parse sites config: duplicate site %q", f.Sites[i].Name)
+		}
+		sites[f.Sites[i].Name] = true
+		cats := map[string]bool{}
+		for j, c := range s.Categories {
+			name := strings.TrimSpace(c.Name)
+			f.Sites[i].Categories[j].Name = name
+			if cats[name] {
+				return File{}, fmt.Errorf("parse sites config: site %q: duplicate category %q", f.Sites[i].Name, name)
+			}
+			cats[name] = true
 		}
 	}
 	return f, nil
