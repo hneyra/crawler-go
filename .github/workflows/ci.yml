@@ -52,7 +52,9 @@ jobs:
           out=$(git ls-files -z '*.go' | xargs -0 gofmt -l)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: generated code up to date
-        run: go generate ./... && git diff --exit-code
+        run: |
+          go generate ./...
+          if [ -n "$(git status --porcelain)" ]; then git status --porcelain; git diff; exit 1; fi
       - name: go vet
         run: go vet ./...
       - name: golangci-lint
