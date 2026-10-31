@@ -42,8 +42,9 @@ func migrate(ctx context.Context, log *slog.Logger, args []string) error {
 		if err != nil || v < 0 {
 			return fmt.Errorf("bad version %q", args[1])
 		}
-		if os.Getenv("CRAWLER_ENV") == "prod" && os.Getenv("CRAWLER_ALLOW_DOWN") != "yes" {
-			return fmt.Errorf("down-to refused in prod without CRAWLER_ALLOW_DOWN=yes")
+		// migrate skips config.Load -> unknown env ("production", "") treated as prod.
+		if env := os.Getenv("CRAWLER_ENV"); env != "dev" && env != "test" && os.Getenv("CRAWLER_ALLOW_DOWN") != "yes" {
+			return fmt.Errorf("down-to refused outside CRAWLER_ENV=dev|test without CRAWLER_ALLOW_DOWN=yes")
 		}
 		return db.MigrateDownTo(ctx, pool, v)
 	default:
