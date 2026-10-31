@@ -36,10 +36,25 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    busy = true;
     error = null;
     fields = {};
-    const d = Number(delay);
+    const incomplete = [
+      ['field_selectors', selectors],
+      ['json_paths', jsonPaths]
+    ] as const;
+    for (const [k, rows] of incomplete) {
+      if (rows.some((r) => (r.key.trim() === '') !== (r.value.trim() === ''))) {
+        fields = { ...fields, [k]: 'Completa o quita las filas a medias.' };
+      }
+    }
+    if (Object.keys(fields).length > 0) {
+      error = 'Revisa los campos marcados.';
+      return;
+    }
+    busy = true;
+    // number input binds number|null; empty -> default, not 0 (0 = no politeness).
+    const raw = delay as unknown;
+    const d = raw === null || raw === '' ? 1000 : Number(raw);
     try {
       await onsave({
         name,

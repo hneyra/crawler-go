@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import ExternalLink from '#lib/components/ExternalLink.svelte';
   import AsyncState from '#lib/components/AsyncState.svelte';
   import Badge from '#lib/components/Badge.svelte';
   import CategoryForm from '#lib/components/CategoryForm.svelte';
@@ -82,7 +83,7 @@
   const act = (a: SiteAction) =>
     guarded(async () => {
       const r = await runSite(siteId, a);
-      await loadRuns();
+      await loadRuns().catch(() => {}); // run is queued; refresh failure is not the action's
       return queuedMessage(r);
     });
 
@@ -142,7 +143,7 @@
   const discoverCategory = (c: Category) =>
     guarded(async () => {
       const r = await runCategory(c.id);
-      await loadRuns();
+      await loadRuns().catch(() => {});
       return queuedMessage(r);
     });
 </script>
@@ -249,10 +250,7 @@
                 <tr>
                   <td class="tnum">{c.id}</td>
                   <td>{c.name}</td>
-                  <td class="small url"
-                    ><a href={c.url} rel="noopener noreferrer nofollow" target="_blank">{c.url}</a
-                    ></td
-                  >
+                  <td class="small url"><ExternalLink href={c.url} /></td>
                   <td><code>{c.pagination_type}</code></td>
                   <td><code>{c.item_link_selector}</code></td>
                   <td

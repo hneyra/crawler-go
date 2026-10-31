@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
+  import ExternalLink from '#lib/components/ExternalLink.svelte';
   import AsyncState from '#lib/components/AsyncState.svelte';
   import Pager from '#lib/components/Pager.svelte';
   import PropsTree from '#lib/components/PropsTree.svelte';
@@ -20,12 +22,15 @@
     )
   );
 
+  // mount only. untrack: load() reads siteId -> effect would re-run on every filter change.
   $effect(() => {
-    void unwrap(api().GET('/api/v1/sites')).then(
-      (r) => (sites = r.items),
-      () => {}
-    );
-    void list.load(1);
+    untrack(() => {
+      void unwrap(api().GET('/api/v1/sites')).then(
+        (r) => (sites = r.items),
+        () => {}
+      );
+      void list.load(1);
+    });
   });
 </script>
 
@@ -79,9 +84,7 @@
           <tr>
             <td class="tnum">{it.id}</td>
             <td>{it.title || '—'}</td>
-            <td class="small url"
-              ><a href={it.url} rel="noopener noreferrer nofollow" target="_blank">{it.url}</a></td
-            >
+            <td class="small url"><ExternalLink href={it.url} /></td>
             <td><a href={`/sitios/${it.site_id}`}>{it.site_name}</a></td>
             <td class="small">{fmtDate(it.extracted_at)}</td>
             <td>

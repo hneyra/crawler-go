@@ -93,6 +93,7 @@ services:
         condition: service_completed_successfully
 
   # admin ui. `docker compose --profile full up` (or make up-full).
+  # changing CRAWLER_WEB_PORT? set CRAWLER_WEB_ORIGIN to the same origin (csrf origin check).
   web:
     profiles: [full]
     image: crawler-web:dev

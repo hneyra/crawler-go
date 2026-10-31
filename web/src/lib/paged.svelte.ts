@@ -22,19 +22,24 @@ export class Paged<T> {
     return Math.max(1, Math.ceil(this.total / this.perPage));
   }
 
+  private seq = 0;
+
+  // latest call wins: slower earlier responses are dropped.
   load = async (page = this.page) => {
+    const mine = ++this.seq;
     this.loading = true;
     try {
       const r = await this.fetchPage(page);
+      if (mine !== this.seq) return;
       this.items = r.items;
       this.total = r.total;
       this.perPage = r.per_page;
       this.page = r.page || page;
       this.error = null;
     } catch (e) {
-      this.error = errorMessage(e);
+      if (mine === this.seq) this.error = errorMessage(e);
     } finally {
-      this.loading = false;
+      if (mine === this.seq) this.loading = false;
     }
   };
 }

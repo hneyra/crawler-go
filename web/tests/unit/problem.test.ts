@@ -53,6 +53,8 @@ describe('problem+json', () => {
     expect(safeNext('https://evil.example')).toBe('/');
     expect(safeNext('/\\evil')).toBe('/');
     expect(safeNext(null, '/items')).toBe('/items');
+    expect(safeNext('/\t/evil.example')).toBe('/');
+    expect(safeNext('/%2F/x')).toBe('/%2F/x');
   });
 });
 

@@ -15,11 +15,8 @@ help:
 db-up:
 	docker compose up -d --wait db
 
-db-up-full:
-	CRAWLER_VERSION=$(VERSION) docker compose --profile full up -d --build --wait db migrate api worker web
-
-down:
-	docker compose --profile full down
+db-down:
+	docker compose down
 
 db-reset:
 	docker compose down -v && docker compose up -d --wait db
@@ -60,8 +57,12 @@ tidy:
 up:
 	CRAWLER_VERSION=$(VERSION) docker compose up -d --build --wait db migrate api worker
 
+# full stack + web ui (http://localhost:3000).
+up-full:
+	CRAWLER_VERSION=$(VERSION) docker compose --profile full up -d --build --wait db migrate api worker web
+
 down:
-	docker compose down
+	docker compose --profile full down
 
 logs:
 	docker compose logs -f --tail=200 $(SVC)

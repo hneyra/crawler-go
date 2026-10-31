@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
   import AsyncState from '#lib/components/AsyncState.svelte';
   import Pager from '#lib/components/Pager.svelte';
@@ -19,12 +20,15 @@
     )
   );
 
+  // mount only. untrack: load() reads siteId -> effect would re-run on every filter change.
   $effect(() => {
-    void unwrap(api().GET('/api/v1/sites')).then(
-      (r) => (sites = r.items),
-      () => {}
-    );
-    void list.load(1);
+    untrack(() => {
+      void unwrap(api().GET('/api/v1/sites')).then(
+        (r) => (sites = r.items),
+        () => {}
+      );
+      void list.load(1);
+    });
   });
 </script>
 

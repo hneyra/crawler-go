@@ -22,16 +22,18 @@
     try {
       const s = await unwrap(api().POST('/api/v1/auth/login', { body: { email, password } }));
       session.set(s);
-      await goto(safeNext(page.url.searchParams.get('next')));
     } catch (err) {
       fields = fieldErrorMap(err);
       error =
         err instanceof ApiError && err.status === 401
           ? 'Email o contraseña incorrectos.'
           : authErrorMessage(err);
+      return;
     } finally {
       busy = false;
     }
+    // outside try: navigation errors are not login errors.
+    await goto(safeNext(page.url.searchParams.get('next'), '/', location.origin));
   }
 </script>
 
