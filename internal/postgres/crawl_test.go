@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,5 +245,71 @@ func TestConcurrentSitePatchesNoLostUpdate(t *testing.T) {
 	got, _ := f.sites.GetSite(ctx, s.ID)
 	if got.Enabled || got.PolitenessDelayMs != 5000 {
 		t.Fatalf("lost update: %+v", got)
+	}
+}
+
+func TestURLQueueClaimFailRelease(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	s := f.site(t, "a")
+	c := f.category(t, s.ID, "c", true)
+	for i := 1; i <= 5; i++ {
+		f.url(t, c, i)
+	}
+	// two concurrent claimers never share a url.
+	type res struct {
+		urls []crawl.DiscoveredURL
+		err  error
+	}
+	ch := make(chan res, 2)
+	for range 2 {
+		go func() { u, err := f.urls.ClaimPending(ctx, s.ID, 3); ch <- res{u, err} }()
+	}
+	seen := map[int64]bool{}
+	total := 0
+	for range 2 {
+		r := <-ch
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		for _, u := range r.urls {
+			if seen[u.ID] || u.Status != crawl.URLInProgress || u.LastAttemptAt == nil {
+				t.Fatalf("bad claim %+v", u)
+			}
+			seen[u.ID] = true
+			total++
+		}
+	}
+	if total != 5 {
+		t.Fatalf("claimed %d", total)
+	}
+	if n, _ := f.urls.CountPending(ctx, s.ID); n != 0 {
+		t.Fatalf("pending %d", n)
+	}
+	ids := []int64{}
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	if err := f.urls.MarkCompleted(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.urls.MarkFailed(ctx, ids[1], strings.Repeat("é", 2000)+"\x00"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.urls.Release(ctx, ids[2:]); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := f.urls.SiteStats(ctx, s.ID)
+	if st.Completed != 1 || st.Failed != 1 || st.Pending != 3 || st.InProgress != 0 {
+		t.Fatalf("stats %+v", st)
+	}
+	failed, _ := f.urls.ListURLs(ctx, s.ID, crawl.URLFailed, 1)
+	if failed[0].RetryCount != 1 || len(failed[0].LastError) > 1000 || failed[0].LastError == "" {
+		t.Fatalf("failed row: retry=%d errlen=%d", failed[0].RetryCount, len(failed[0].LastError))
+	}
+	// released keep retry budget; completed not re-claimed.
+	again, _ := f.urls.ClaimPending(ctx, s.ID, 10)
+	if len(again) != 3 || again[0].ID > again[1].ID {
+		t.Fatalf("reclaim %+v", again)
 	}
 }

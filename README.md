@@ -56,6 +56,7 @@ crawler migrate up|status|down-to N
 crawler sync-sites [archivo]   carga sites-config.yml (upsert por nombre)
 crawler admin create|set-password|promote EMAIL
 crawler discover CATEGORY_ID   discovery de una categoría en primer plano (debug)
+crawler extract SITE_ID        extrae todas las URLs pendientes de un sitio en primer plano (debug)
 crawler healthcheck [url]
 crawler version
 ```
@@ -71,6 +72,26 @@ Recorre las páginas de listado de cada categoría y guarda las URLs de detalle 
 
 Si el sitio responde 403/429/503 o una página de challenge de Cloudflare, se reintenta con Chrome headless (chromedp).
 Chrome solo se arranca cuando hace falta; ruta con `CRAWLER_CHROME_PATH` (vacío = buscar en PATH).
+
+## Extracción
+
+Toma lotes de URLs `PENDING` (`FOR UPDATE SKIP LOCKED`, varios workers no se pisan), guarda el HTML crudo en
+`CRAWLER_RAW_DATA_DIR/{sitio}/{fecha}/{sha256}.html` y extrae propiedades:
+
+| Estrategia | Fuente |
+|---|---|
+| `HTML` | `field_selectors` (CSS, texto del primer match) |
+| `SCRIPT_JSON` | `field_selectors` + regex `script_patterns` sobre `<script>` (grupo 1) + `json_paths` |
+| `AJAX` | Chrome headless; respuestas XHR que coinciden con `intercept_patterns` + `json_paths`; JSON crudo en `ajax_<status>_<url>` |
+
+JSON-LD (`<script type="application/ld+json">`) se extrae siempre como `jsonLd`. El título es la propiedad `title`
+o, si falta, el `<title>` de la página. Un item por URL: re-extraer lo actualiza.
+Fallo de una URL → `FAILED` + `retry_count`; fallo propio (disco/BD/Chrome que no arranca) o apagado → las URLs
+vuelven a `PENDING` sin consumir reintentos. El HTML se decodifica según su charset (latin-1 → UTF-8); contenido
+no almacenable (NUL, UTF-8 inválido, números infinitos) se limpia antes de guardar.
+`json_paths` usa la sintaxis de [ojg](https://github.com/ohler55/ojg): las funciones de Jayway (`.length()`,
+`.min()`) no están soportadas y se rechazan al validar; una ruta inválida en datos antiguos se omite con un aviso.
+Paths indefinidos (`$..x`, `[*]`, filtros) siempre devuelven lista, como Jayway. Las fechas de los snapshots son UTC.
 
 ## Desarrollo
 

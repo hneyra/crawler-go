@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/hneyra/crawler-go/internal/apperr"
 	"github.com/hneyra/crawler-go/internal/crawl"
 	"github.com/hneyra/crawler-go/internal/platform/db"
 )
@@ -46,7 +47,8 @@ func (s Items) UpsertItem(ctx context.Context, it crawl.Item) (crawl.Item, error
 	}
 	raw, err := json.Marshal(props)
 	if err != nil {
-		return crawl.Item{}, fmt.Errorf("encode properties: %w", err)
+		// page content not representable (e.g. +Inf): the url's fault, not ours.
+		return crawl.Item{}, apperr.Invalid("item_unencodable", "Propiedades no codificables").Wrap(err)
 	}
 	var id int64
 	err = db.Q(ctx, s.Pool).QueryRow(ctx,
@@ -58,6 +60,9 @@ func (s Items) UpsertItem(ctx context.Context, it crawl.Item) (crawl.Item, error
 		 RETURNING id`,
 		it.DiscoveredURLID, it.SiteID, it.Title, raw, nullable(it.RawSnapshotPath)).Scan(&id)
 	if err != nil {
+		if db.IsDataException(err) {
+			return crawl.Item{}, apperr.Invalid("item_rejected", "Datos del item rechazados por la base").Wrap(err)
+		}
 		return crawl.Item{}, fmt.Errorf("upsert item for url %d: %w", it.DiscoveredURLID, err)
 	}
 	return s.GetItem(ctx, id)

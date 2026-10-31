@@ -43,6 +43,19 @@ type URLStore interface {
 	ResetFailed(ctx context.Context, maxRetries int) (int64, error)
 }
 
+// URLQueue = extraction work queue over discovered urls.
+type URLQueue interface {
+	// ClaimPending moves up to limit PENDING urls of site to IN_PROGRESS (skip locked rows,
+	// concurrent workers never share a url). last_attempt_at = now.
+	ClaimPending(ctx context.Context, siteID int64, limit int) ([]DiscoveredURL, error)
+	MarkCompleted(ctx context.Context, id int64) error
+	// MarkFailed: FAILED, retry_count+1, last_error kept (truncated).
+	MarkFailed(ctx context.Context, id int64, reason string) error
+	// Release puts claimed-but-unprocessed urls back to PENDING (shutdown mid batch).
+	Release(ctx context.Context, ids []int64) error
+	CountPending(ctx context.Context, siteID int64) (int64, error)
+}
+
 // ItemStore = extracted item persistence.
 type ItemStore interface {
 	// UpsertItem = one item per url. re-extract overwrites.
