@@ -8,7 +8,7 @@ Stack y convenciones = `costeape/costea-backend` (Go) + `costeape/costea-fronten
 - Hexagonal. Dominio (`internal/crawl`, `discovery`, `extraction`, `urlx`, `storage`, `jobs`, `identity`...) no importa pgx, net/http (salvo `fetch`), chromedp ni adaptadores. Lo vigila `internal/archtest`.
 - Adaptadores: `internal/postgres` (SQL a mano, pgx, `db.Q(ctx, pool)`), `internal/httpapi` (strict server generado), `internal/render/chromedp`.
 - Spec-first: cambia `api/openapi.yaml`, luego `make generate`. Nunca editar `*.gen.go`.
-- Migraciones goose en `migrations/`: nunca editar una aplicada; rangos 00001-09 plataforma/identidad, 00010-19 crawl, 00020-29 jobs.
+- Migraciones goose en `migrations/`: nunca editar una aplicada; versión siempre creciente (goose rechaza fuera de orden); rangos 00001-09 plataforma, 00010-19 crawl, 00020-29 identidad, 00030-39 jobs.
 - Errores: `apperr` tipados, envueltos con contexto (`fmt.Errorf("load site %d: %w", id, err)`); HTTP → problem+json.
 - Contenido de terceros (HTML, JSON) = no confiable. Nunca ejecutar ni renderizar sin escapar.
 - Sin goroutines sin fin definido; sin estado global mutable; ctx propagado.

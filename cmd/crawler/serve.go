@@ -30,11 +30,19 @@ func serve(ctx context.Context, log *slog.Logger) error {
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	limits := httpapi.DefaultLimits()
+	if !d.cfg.RateLimit {
+		// CRAWLER_RATE_LIMIT=off: dev/test only. config refuses prod.
+		log.Warn("rate limiting disabled (CRAWLER_RATE_LIMIT=off)")
+		limits = httpapi.NoLimits()
+	}
 	h, err := httpapi.NewHandler(m.server, httpapi.Options{
 		Log:            log,
 		PublicURL:      d.cfg.PublicURL,
 		TrustedProxies: d.cfg.TrustedProxies,
 		Metrics:        httpx.NewMetrics(reg),
+		Sessions:       m.sessions,
+		Limits:         limits,
 	})
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
@@ -54,6 +62,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	metrics := &http.Server{Addr: d.cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 5 * time.Second}
 
 	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { limits.Run(gctx); return nil })
 	for _, s := range []*http.Server{api, metrics} {
 		g.Go(func() error {
 			log.Info("listening", "addr", s.Addr)

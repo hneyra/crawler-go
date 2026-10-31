@@ -194,6 +194,12 @@ type HealthStatus string
 // LinkExtractionType defines model for LinkExtractionType.
 type LinkExtractionType string
 
+// LoginInput defines model for LoginInput.
+type LoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 // PaginationType defines model for PaginationType.
 type PaginationType string
 
@@ -215,6 +221,13 @@ type Problem struct {
 
 // RuleMap defines model for RuleMap.
 type RuleMap map[string]string
+
+// Session defines model for Session.
+type Session struct {
+	CsrfToken string    `json:"csrf_token"`
+	ExpiresAt time.Time `json:"expires_at"`
+	User      User      `json:"user"`
+}
 
 // Site defines model for Site.
 type Site struct {
@@ -255,11 +268,66 @@ type SitePatch struct {
 	PolitenessDelayMs *int                   `json:"politeness_delay_ms,omitempty"`
 }
 
+// User defines model for User.
+type User struct {
+	Email   string `json:"email"`
+	Id      int64  `json:"id"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
+// CSRFParam defines model for CSRFParam.
+type CSRFParam = string
+
 // CategoryIdParam defines model for CategoryIdParam.
 type CategoryIdParam = int64
 
 // SiteIdParam defines model for SiteIdParam.
 type SiteIdParam = int64
+
+// LogoutParams defines parameters for Logout.
+type LogoutParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// DeleteCategoryParams defines parameters for DeleteCategory.
+type DeleteCategoryParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// UpdateCategoryParams defines parameters for UpdateCategory.
+type UpdateCategoryParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// CreateSiteParams defines parameters for CreateSite.
+type CreateSiteParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// DeleteSiteParams defines parameters for DeleteSite.
+type DeleteSiteParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// UpdateSiteParams defines parameters for UpdateSite.
+type UpdateSiteParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// CreateCategoryParams defines parameters for CreateCategory.
+type CreateCategoryParams struct {
+	// XCSRFToken token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o `same-site`.
+	XCSRFToken CSRFParam `json:"X-CSRF-Token"`
+}
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginInput
 
 // UpdateCategoryJSONRequestBody defines body for UpdateCategory for application/json ContentType.
 type UpdateCategoryJSONRequestBody = CategoryPatch
@@ -276,35 +344,44 @@ type CreateCategoryJSONRequestBody = CategoryInput
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (POST /api/v1/auth/login)
+	Login(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/v1/auth/logout)
+	Logout(w http.ResponseWriter, r *http.Request, params LogoutParams)
+
+	// (GET /api/v1/auth/session)
+	GetSession(w http.ResponseWriter, r *http.Request)
+
 	// (DELETE /api/v1/categories/{categoryId})
-	DeleteCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam)
+	DeleteCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params DeleteCategoryParams)
 
 	// (GET /api/v1/categories/{categoryId})
 	GetCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam)
 
 	// (PATCH /api/v1/categories/{categoryId})
-	UpdateCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam)
+	UpdateCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params UpdateCategoryParams)
 
 	// (GET /api/v1/sites)
 	ListSites(w http.ResponseWriter, r *http.Request)
 
 	// (POST /api/v1/sites)
-	CreateSite(w http.ResponseWriter, r *http.Request)
+	CreateSite(w http.ResponseWriter, r *http.Request, params CreateSiteParams)
 
 	// (DELETE /api/v1/sites/{siteId})
-	DeleteSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
+	DeleteSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params DeleteSiteParams)
 
 	// (GET /api/v1/sites/{siteId})
 	GetSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
 
 	// (PATCH /api/v1/sites/{siteId})
-	UpdateSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
+	UpdateSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params UpdateSiteParams)
 
 	// (GET /api/v1/sites/{siteId}/categories)
 	ListCategories(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
 
 	// (POST /api/v1/sites/{siteId}/categories)
-	CreateCategory(w http.ResponseWriter, r *http.Request, siteId SiteIdParam)
+	CreateCategory(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params CreateCategoryParams)
 
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -322,6 +399,79 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LogoutParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteCategory operation middleware
 func (siw *ServerInterfaceWrapper) DeleteCategory(w http.ResponseWriter, r *http.Request) {
 
@@ -337,8 +487,36 @@ func (siw *ServerInterfaceWrapper) DeleteCategory(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCategoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteCategory(w, r, categoryId)
+		siw.Handler.DeleteCategory(w, r, categoryId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -389,8 +567,36 @@ func (siw *ServerInterfaceWrapper) UpdateCategory(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateCategoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateCategory(w, r, categoryId)
+		siw.Handler.UpdateCategory(w, r, categoryId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -417,8 +623,39 @@ func (siw *ServerInterfaceWrapper) ListSites(w http.ResponseWriter, r *http.Requ
 // CreateSite operation middleware
 func (siw *ServerInterfaceWrapper) CreateSite(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateSite(w, r)
+		siw.Handler.CreateSite(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -443,8 +680,36 @@ func (siw *ServerInterfaceWrapper) DeleteSite(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteSite(w, r, siteId)
+		siw.Handler.DeleteSite(w, r, siteId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -495,8 +760,36 @@ func (siw *ServerInterfaceWrapper) UpdateSite(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateSiteParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateSite(w, r, siteId)
+		siw.Handler.UpdateSite(w, r, siteId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -547,8 +840,36 @@ func (siw *ServerInterfaceWrapper) CreateCategory(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCategoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CSRFParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateCategory(w, r, siteId)
+		siw.Handler.CreateCategory(w, r, siteId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -708,6 +1029,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/logout", wrapper.Logout)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sites", wrapper.ListSites)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sites", wrapper.CreateSite)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/sites/{siteId}", wrapper.DeleteSite)
@@ -724,8 +1048,205 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type ProblemApplicationProblemPlusJSONResponse Problem
 
+type LoginRequestObject struct {
+	Body *LoginJSONRequestBody
+}
+
+type LoginResponseObject interface {
+	VisitLoginResponse(w http.ResponseWriter) error
+}
+
+type Login200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type Login200JSONResponse struct {
+	Body    Session
+	Headers Login200ResponseHeaders
+}
+
+func (response Login200JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response Login401ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login429ApplicationProblemPlusJSONResponse Problem
+
+func (response Login429ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogindefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response LogindefaultApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogoutRequestObject struct {
+	Params LogoutParams
+}
+
+type LogoutResponseObject interface {
+	VisitLogoutResponse(w http.ResponseWriter) error
+}
+
+type Logout204Response struct {
+}
+
+func (response Logout204Response) VisitLogoutResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type Logout401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response Logout401ApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Logout403ApplicationProblemPlusJSONResponse Problem
+
+func (response Logout403ApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogoutdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response LogoutdefaultApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionRequestObject struct {
+}
+
+type GetSessionResponseObject interface {
+	VisitGetSessionResponse(w http.ResponseWriter) error
+}
+
+type GetSession200JSONResponse Session
+
+func (response GetSession200JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSession401ApplicationProblemPlusJSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSessiondefaultApplicationProblemPlusJSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteCategoryRequestObject struct {
 	CategoryId CategoryIdParam `json:"categoryId"`
+	Params     DeleteCategoryParams
 }
 
 type DeleteCategoryResponseObject interface {
@@ -830,6 +1351,7 @@ func (response GetCategorydefaultApplicationProblemPlusJSONResponse) VisitGetCat
 
 type UpdateCategoryRequestObject struct {
 	CategoryId CategoryIdParam `json:"categoryId"`
+	Params     UpdateCategoryParams
 	Body       *UpdateCategoryJSONRequestBody
 }
 
@@ -951,7 +1473,8 @@ func (response ListSitesdefaultApplicationProblemPlusJSONResponse) VisitListSite
 }
 
 type CreateSiteRequestObject struct {
-	Body *CreateSiteJSONRequestBody
+	Params CreateSiteParams
+	Body   *CreateSiteJSONRequestBody
 }
 
 type CreateSiteResponseObject interface {
@@ -1021,6 +1544,7 @@ func (response CreateSitedefaultApplicationProblemPlusJSONResponse) VisitCreateS
 
 type DeleteSiteRequestObject struct {
 	SiteId SiteIdParam `json:"siteId"`
+	Params DeleteSiteParams
 }
 
 type DeleteSiteResponseObject interface {
@@ -1125,6 +1649,7 @@ func (response GetSitedefaultApplicationProblemPlusJSONResponse) VisitGetSiteRes
 
 type UpdateSiteRequestObject struct {
 	SiteId SiteIdParam `json:"siteId"`
+	Params UpdateSiteParams
 	Body   *UpdateSiteJSONRequestBody
 }
 
@@ -1264,6 +1789,7 @@ func (response ListCategoriesdefaultApplicationProblemPlusJSONResponse) VisitLis
 
 type CreateCategoryRequestObject struct {
 	SiteId SiteIdParam `json:"siteId"`
+	Params CreateCategoryParams
 	Body   *CreateCategoryJSONRequestBody
 }
 
@@ -1441,6 +1967,15 @@ func (response GetReadyzdefaultApplicationProblemPlusJSONResponse) VisitGetReady
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (POST /api/v1/auth/login)
+	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
+
+	// (POST /api/v1/auth/logout)
+	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+
+	// (GET /api/v1/auth/session)
+	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+
 	// (DELETE /api/v1/categories/{categoryId})
 	DeleteCategory(ctx context.Context, request DeleteCategoryRequestObject) (DeleteCategoryResponseObject, error)
 
@@ -1517,11 +2052,93 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// Login operation middleware
+func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var request LoginRequestObject
+
+	var body LoginJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Login(ctx, request.(LoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Login")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LoginResponseObject); ok {
+		if err := validResponse.VisitLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Logout operation middleware
+func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request, params LogoutParams) {
+	var request LogoutRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Logout(ctx, request.(LogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Logout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogoutResponseObject); ok {
+		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSession operation middleware
+func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
+	var request GetSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSession(ctx, request.(GetSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
+		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DeleteCategory operation middleware
-func (sh *strictHandler) DeleteCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam) {
+func (sh *strictHandler) DeleteCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params DeleteCategoryParams) {
 	var request DeleteCategoryRequestObject
 
 	request.CategoryId = categoryId
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DeleteCategory(ctx, request.(DeleteCategoryRequestObject))
@@ -1570,10 +2187,11 @@ func (sh *strictHandler) GetCategory(w http.ResponseWriter, r *http.Request, cat
 }
 
 // UpdateCategory operation middleware
-func (sh *strictHandler) UpdateCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam) {
+func (sh *strictHandler) UpdateCategory(w http.ResponseWriter, r *http.Request, categoryId CategoryIdParam, params UpdateCategoryParams) {
 	var request UpdateCategoryRequestObject
 
 	request.CategoryId = categoryId
+	request.Params = params
 
 	var body UpdateCategoryJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -1627,8 +2245,10 @@ func (sh *strictHandler) ListSites(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateSite operation middleware
-func (sh *strictHandler) CreateSite(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) CreateSite(w http.ResponseWriter, r *http.Request, params CreateSiteParams) {
 	var request CreateSiteRequestObject
+
+	request.Params = params
 
 	var body CreateSiteJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -1658,10 +2278,11 @@ func (sh *strictHandler) CreateSite(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteSite operation middleware
-func (sh *strictHandler) DeleteSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam) {
+func (sh *strictHandler) DeleteSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params DeleteSiteParams) {
 	var request DeleteSiteRequestObject
 
 	request.SiteId = siteId
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DeleteSite(ctx, request.(DeleteSiteRequestObject))
@@ -1710,10 +2331,11 @@ func (sh *strictHandler) GetSite(w http.ResponseWriter, r *http.Request, siteId 
 }
 
 // UpdateSite operation middleware
-func (sh *strictHandler) UpdateSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam) {
+func (sh *strictHandler) UpdateSite(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params UpdateSiteParams) {
 	var request UpdateSiteRequestObject
 
 	request.SiteId = siteId
+	request.Params = params
 
 	var body UpdateSiteJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -1769,10 +2391,11 @@ func (sh *strictHandler) ListCategories(w http.ResponseWriter, r *http.Request, 
 }
 
 // CreateCategory operation middleware
-func (sh *strictHandler) CreateCategory(w http.ResponseWriter, r *http.Request, siteId SiteIdParam) {
+func (sh *strictHandler) CreateCategory(w http.ResponseWriter, r *http.Request, siteId SiteIdParam, params CreateCategoryParams) {
 	var request CreateCategoryRequestObject
 
 	request.SiteId = siteId
+	request.Params = params
 
 	var body CreateCategoryJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -1854,44 +2477,55 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"e9xK6iSdjzyf/d7XzEid8+LPfxVJj9P/DQA=",
+	"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",
+	"c3o2/e8A",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -8,35 +8,80 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/hneyra/crawler-go/internal/crawl"
 	"github.com/hneyra/crawler-go/internal/httpapi"
+	"github.com/hneyra/crawler-go/internal/identity"
 	"github.com/hneyra/crawler-go/internal/platform/db"
 	"github.com/hneyra/crawler-go/internal/platform/dbtest"
 	"github.com/hneyra/crawler-go/internal/postgres"
 )
 
+// client = cookie jar + csrf header. zero csrf = anonymous-ish.
 type client struct {
-	t   *testing.T
-	url string
+	t      *testing.T
+	url    string
+	http   *http.Client
+	csrf   string
+	header map[string]string
 }
 
-func newSitesServer(t *testing.T) client {
+type testEnv struct {
+	url string
+	ids *identity.Service
+}
+
+const testOrigin = "http://ui.test"
+
+func newEnv(t *testing.T) testEnv {
 	t.Helper()
 	pool := dbtest.New(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ids, err := identity.New(postgres.Identity{Pool: pool}, db.Runner{Pool: pool}, log, identity.Settings{SessionTTL: time.Hour}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cat := crawl.Catalog{Tx: db.Runner{Pool: pool}, Sites: postgres.Sites{Pool: pool}, Categories: postgres.Categories{Pool: pool}}
 	h, err := httpapi.NewHandler(&httpapi.Server{
 		Ops:      &httpapi.Ops{DB: pool, Version: "t"},
+		AuthAPI:  &httpapi.AuthAPI{Identity: ids, SessionTTL: time.Hour},
 		SitesAPI: &httpapi.SitesAPI{Catalog: cat, Sites: cat.Sites, Categories: cat.Categories},
-	}, httpapi.Options{Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	}, httpapi.Options{Log: log, PublicURL: testOrigin, Sessions: ids, Limits: httpapi.NoLimits()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return client{t, srv.URL}
+	return testEnv{url: srv.URL, ids: ids}
+}
+
+func (e testEnv) anon(t *testing.T) client {
+	jar, _ := cookiejar.New(nil)
+	return client{t: t, url: e.url, http: &http.Client{Jar: jar}}
+}
+
+// login creates user (admin or not) and returns logged-in client with csrf.
+func (e testEnv) login(t *testing.T, email string, admin bool) client {
+	t.Helper()
+	if _, err := e.ids.CreateUser(context.Background(), email, "correct horse battery", admin); err != nil {
+		t.Fatal(err)
+	}
+	c := e.anon(t)
+	var s httpapi.Session
+	if st := c.do("POST", "/api/v1/auth/login", map[string]any{"email": email, "password": "correct horse battery"}, &s); st != 200 || s.CsrfToken == "" {
+		t.Fatalf("login: %d %+v", st, s)
+	}
+	c.csrf = s.CsrfToken
+	return c
+}
+
+func newSitesServer(t *testing.T) client {
+	t.Helper()
+	return newEnv(t).login(t, "admin@crawler.test", true)
 }
 
 // do sends json, decodes json response into out (if non-nil). returns status.
@@ -51,7 +96,13 @@ func (c client) do(method, path string, body any, out any) int {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	res, err := http.DefaultClient.Do(req)
+	if c.csrf != "" {
+		req.Header.Set("X-CSRF-Token", c.csrf)
+	}
+	for k, v := range c.header {
+		req.Header.Set(k, v)
+	}
+	res, err := c.http.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
 	}

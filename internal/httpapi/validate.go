@@ -11,6 +11,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 
+	"github.com/hneyra/crawler-go/internal/actor"
 	"github.com/hneyra/crawler-go/internal/apperr"
 	"github.com/hneyra/crawler-go/internal/platform/httpx"
 )
@@ -21,23 +22,28 @@ const maxValidationFields = 20
 // requestValidator enforces spec constraints (maxLength, maximum, maxItems, enum...) at runtime.
 // route found by mux pattern -> no second router. auth = ours, not spec security.
 type requestValidator struct {
-	routes map[string]*routers.Route // "GET /api/v1/sites" -> route
-	log    *slog.Logger
+	routes    map[string]*routers.Route // "GET /api/v1/sites" -> route
+	rules     map[string]requirement    // same key -> auth class
+	publicURL string
+	log       *slog.Logger
 }
 
-func newRequestValidator(log *slog.Logger) (*requestValidator, error) {
+func newRequestValidator(log *slog.Logger, rules map[string]requirement, publicURL string) (*requestValidator, error) {
 	spec, err := GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load embedded spec: %w", err)
 	}
 	spec.Servers = nil
-	v := &requestValidator{routes: map[string]*routers.Route{}, log: log}
+	v := &requestValidator{routes: map[string]*routers.Route{}, rules: map[string]requirement{}, publicURL: publicURL, log: log}
 	for path, item := range spec.Paths.Map() {
 		for method, op := range item.Operations() {
 			// security checked by authorize middleware. empty = skip in filter.
 			cp := *op
 			cp.Security = &openapi3.SecurityRequirements{}
 			v.routes[method+" "+path] = &routers.Route{Spec: spec, Path: path, PathItem: item, Method: method, Operation: &cp}
+			if rule, ok := rules[goName(op.OperationID)]; ok {
+				v.rules[method+" "+path] = rule
+			}
 		}
 	}
 	return v, nil
@@ -48,6 +54,11 @@ func (v *requestValidator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		route := v.routes[r.Pattern]
 		if route == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// unauthenticated/forbidden: no validation work, authorize answers 401/403.
+		if rule, ok := v.rules[r.Pattern]; !ok || checkAuth(rule, v.publicURL, actor.From(r.Context()), r) != nil {
 			next.ServeHTTP(w, r)
 			return
 		}

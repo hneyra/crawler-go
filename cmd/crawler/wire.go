@@ -33,15 +33,22 @@ func open(ctx context.Context, log *slog.Logger) (deps, func(), error) {
 
 // modules = what each module wiring returns.
 type modules struct {
-	server *httpapi.Server
+	server   *httpapi.Server
+	sessions httpapi.SessionResolver
 }
 
 // build wires every module. one wireX per module as they land.
 func build(d deps) (modules, error) {
+	ids, err := identityService(d)
+	if err != nil {
+		return modules{}, fmt.Errorf("wire identity: %w", err)
+	}
 	return modules{
 		server: &httpapi.Server{
 			Ops:      &httpapi.Ops{DB: d.pool, Version: version},
+			AuthAPI:  wireAuth(d, ids),
 			SitesAPI: wireSites(d),
 		},
+		sessions: ids,
 	}, nil
 }
