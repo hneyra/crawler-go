@@ -1,0 +1,71 @@
+# local dev stack. NOT the k3s deployment.
+# app env: ${CRAWLER_ENV_FILE:-.env} (copy .env.example). never commit .env.
+# compose-level overrides below win over env file (in-network db, bind addrs).
+name: crawler
+
+x-backend: &backend
+  image: crawler-go:dev
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+    args:
+      VERSION: ${CRAWLER_VERSION:-dev}
+  env_file:
+    - path: ${CRAWLER_ENV_FILE:-.env}
+      required: false
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+x-backend-env: &backend-env
+  CRAWLER_DATABASE_URL: postgres://crawler:${CRAWLER_DB_PASSWORD:-crawler-dev-only}@db:5432/crawler?sslmode=disable
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: crawler
+      POSTGRES_PASSWORD: ${CRAWLER_DB_PASSWORD:-crawler-dev-only}
+      POSTGRES_DB: crawler
+    ports:
+      - "127.0.0.1:${CRAWLER_DB_PORT:-5441}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crawler -d crawler"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # one-shot. api waits for exit 0.
+  migrate:
+    <<: *backend
+    command: ["migrate", "up"]
+    environment:
+      <<: *backend-env
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    command: ["serve"]
+    environment:
+      <<: *backend-env
+      CRAWLER_HTTP_ADDR: 0.0.0.0:8080
+      CRAWLER_METRICS_ADDR: 0.0.0.0:9091
+    ports:
+      - "127.0.0.1:${CRAWLER_API_PORT:-8080}:8080"
+      - "127.0.0.1:${CRAWLER_METRICS_PORT:-9091}:9091"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:

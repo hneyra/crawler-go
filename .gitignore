@@ -1,0 +1,29 @@
+# build
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+# env + secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+# runtime data
+/data/
+sites-config.yml
+# web
+web/node_modules/
+web/.svelte-kit/
+web/build/
+# infra
+infra/node_modules/
+infra/bin/
+# editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.claude/worktrees/
