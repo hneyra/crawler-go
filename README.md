@@ -55,14 +55,28 @@ crawler serve              API HTTP (+ métricas en CRAWLER_METRICS_ADDR)
 crawler migrate up|status|down-to N
 crawler sync-sites [archivo]   carga sites-config.yml (upsert por nombre)
 crawler admin create|set-password|promote EMAIL
+crawler discover CATEGORY_ID   discovery de una categoría en primer plano (debug)
 crawler healthcheck [url]
 crawler version
 ```
+
+## Discovery
+
+Recorre las páginas de listado de cada categoría y guarda las URLs de detalle (deduplicadas por sha256 de la URL normalizada):
+
+| Paginación | Cómo |
+|---|---|
+| `PAGE_PARAM`, `CURSOR` | GET HTTP; siguiente página por `next_page_selector`, `a[rel=next]` o texto «Siguiente»/«Next»/›/». Si el enlace apunta a la misma página (paginación JS) se hace click con Chrome. |
+| `SCROLL_AJAX` | Chrome headless con scroll infinito. |
+
+Si el sitio responde 403/429/503 o una página de challenge de Cloudflare, se reintenta con Chrome headless (chromedp).
+Chrome solo se arranca cuando hace falta; ruta con `CRAWLER_CHROME_PATH` (vacío = buscar en PATH).
 
 ## Desarrollo
 
 - `make generate`: regenera `internal/httpapi/api.gen.go` desde `api/openapi.yaml`.
 - `make check`: gofmt, vet, golangci-lint, govulncheck.
-- `make test`: tests con Postgres real (levanta `db` con compose).
+- `make test`: tests con Postgres real (levanta `db` con compose). Los tests del renderer usan Chrome
+  (`CRAWLER_TEST_CHROME=/ruta/a/chrome`; sin Chrome se omiten).
 
 Plan de trabajo: issues `[Mx.y]` agrupados por milestone (`milestone:m0` … `milestone:m7`), un PR por milestone.
