@@ -30,7 +30,7 @@ export function ingressRoute(s: Settings): Manifest {
       routes: [
         {
           kind: "Rule",
-          match: `${h} && PathPrefix(\`/api\`)`,
+          match: `${h} && (Path(\`/api\`) || PathPrefix(\`/api/\`))`,
           middlewares: [{ name: NAMES.rateLimit }],
           services: [{ name: NAMES.api, port: PORTS.api }],
         },

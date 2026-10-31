@@ -332,7 +332,7 @@ describe("buildPhases inCluster (local)", () => {
     expect(r.spec.tls).toBeUndefined();
     expect(r.spec.routes[0]).toEqual({
       kind: "Rule",
-      match: "Host(`crawler.localhost`) && PathPrefix(`/api`)",
+      match: "Host(`crawler.localhost`) && (Path(`/api`) || PathPrefix(`/api/`))",
       middlewares: [{ name: "api-ratelimit" }],
       services: [{ name: "api", port: 8080 }],
     });

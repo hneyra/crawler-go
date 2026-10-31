@@ -83,8 +83,8 @@ jobs:
           tags: crawler-go:ci
           push: false
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
       - name: smoke
         run: test "$(docker run --rm crawler-go:ci version)" = "${{ github.sha }}"
       - name: build worker image (chromium)
@@ -97,8 +97,8 @@ jobs:
           tags: crawler-go-worker:ci
           push: false
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
       - name: smoke worker (binary + chromium renders a page as non-root, read-only rootfs)
         run: |
           test "$(docker run --rm crawler-go-worker:ci version)" = "${{ github.sha }}"

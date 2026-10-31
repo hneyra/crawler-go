@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.title="crawler-go-worker" \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium ca-certificates fonts-liberation fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/* \
- && groupadd -g 65532 nonroot && useradd -u 65532 -g 65532 -M -d /data -s /usr/sbin/nologin nonroot \
+ && groupadd -g 65532 nonroot && useradd -l -u 65532 -g 65532 -M -d /data -s /usr/sbin/nologin nonroot \
  && mkdir -p /data && chown 65532:65532 /data
 COPY --from=build /out/crawler /crawler
 ENV CRAWLER_CHROME_PATH=/usr/bin/chromium \
