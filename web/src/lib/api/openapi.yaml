@@ -1,0 +1,574 @@
+openapi: 3.0.3
+info:
+  title: Crawler API
+  version: 1.0.0
+  description: |
+    Contrato de referencia del crawler (spec-first). Autoridad única: este archivo.
+    El frontend (`web/`) genera sus tipos desde aquí (`yarn api:sync && yarn api:gen`).
+
+    Conceptos:
+    - **Sitio**: tienda/portal a crawlear, con su configuración de extracción.
+    - **Categoría**: página de listado de un sitio; origen del discovery.
+    - **URL descubierta**: URL de detalle encontrada en un listado. Estados PENDING → IN_PROGRESS → COMPLETED | FAILED.
+    - **Item extraído**: datos estructurados obtenidos de una URL descubierta.
+
+    Errores: `application/problem+json` (RFC 9457).
+
+    Autenticación: sesión por cookie `crawler_session` (HttpOnly) creada con `POST /api/v1/auth/login`.
+    Todas las operaciones fuera de `auth` y `ops` requieren un usuario administrador.
+    Las operaciones no seguras (POST/PATCH/DELETE) requieren la cabecera `X-CSRF-Token`
+    (valor de `GET /api/v1/auth/session`).
+servers:
+  - url: /
+tags:
+  - name: ops
+  - name: auth
+  - name: sites
+  - name: runs
+  - name: items
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: getHealthz
+      security: []
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "proceso vivo", content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /readyz:
+    get:
+      tags: [ops]
+      operationId: getReadyz
+      security: []
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "listo", content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  # ---------- auth ----------
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoginInput" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200":
+          description: sesión creada (cookie crawler_session)
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "204": { description: "sesión cerrada" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/auth/session:
+    get:
+      tags: [auth]
+      operationId: getSession
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "sesión actual + token CSRF", content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
+        "401": { $ref: "#/components/responses/Problem" }
+
+  # ---------- sites ----------
+  /api/v1/sites:
+    get:
+      tags: [sites]
+      operationId: listSites
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "sitios por id", content: { application/json: { schema: { $ref: "#/components/schemas/SiteList" } } } }
+    post:
+      tags: [sites]
+      operationId: createSite
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SiteInput" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "201": { description: "creado", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [sites]
+      operationId: getSite
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [sites]
+      operationId: updateSite
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      description: Actualización parcial. Solo cambian los campos presentes. `extraction_config` se reemplaza completo.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SitePatch" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [sites]
+      operationId: deleteSite
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      description: Borra el sitio con sus categorías, URLs, items y ejecuciones.
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "204": { description: "borrado" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/categories:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [sites]
+      operationId: listCategories
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "categorías del sitio", content: { application/json: { schema: { $ref: "#/components/schemas/CategoryList" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [sites]
+      operationId: createCategory
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CategoryInput" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "201": { description: "creada", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/categories/{categoryId}:
+    parameters:
+      - $ref: "#/components/parameters/CategoryIdParam"
+    get:
+      tags: [sites]
+      operationId: getCategory
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [sites]
+      operationId: updateCategory
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CategoryPatch" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [sites]
+      operationId: deleteCategory
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "204": { description: "borrada" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------- runs ----------
+  /api/v1/categories/{categoryId}/discover:
+    parameters:
+      - $ref: "#/components/parameters/CategoryIdParam"
+    post:
+      tags: [runs]
+      operationId: discoverCategory
+      description: Discovery de una categoría.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/discover:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: discoverSite
+      description: Discovery de todas las categorías habilitadas del sitio.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/extract:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: extractSite
+      description: Extrae todas las URLs PENDING del sitio.
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/crawl:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    post:
+      tags: [runs]
+      operationId: crawlSite
+      description: "Crawl completo: discovery de todas las categorías habilitadas y luego extracción."
+      parameters: [{ $ref: "#/components/parameters/CSRFParam" }]
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "202": { description: "ejecución encolada (o la ya activa del mismo tipo)", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      parameters:
+        - { name: site_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ejecuciones, más recientes primero", content: { application/json: { schema: { $ref: "#/components/schemas/RunList" } } } }
+  /api/v1/runs/{runId}:
+    parameters:
+      - { name: runId, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [runs]
+      operationId: getRun
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/stats:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [runs]
+      operationId: getSiteStats
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "conteos por estado", content: { application/json: { schema: { $ref: "#/components/schemas/SiteStats" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------- items ----------
+  /api/v1/items:
+    get:
+      tags: [items]
+      operationId: listItems
+      parameters:
+        - { name: site_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "items, más recientes primero", content: { application/json: { schema: { $ref: "#/components/schemas/ItemList" } } } }
+  /api/v1/items/{itemId}:
+    parameters:
+      - { name: itemId, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      tags: [items]
+      operationId: getItem
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Item" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: crawler_session
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+    PerPageParam:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CSRFParam:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: >-
+        token de `GET /api/v1/auth/session`. Fallos (403, `Problem.code` estable): `csrf` si falta o no coincide con
+        el de la sesión; `bad_origin` si `Origin` no es `CRAWLER_PUBLIC_URL` o `Sec-Fetch-Site` es `cross-site` o
+        `same-site`.
+      schema: { type: string, maxLength: 128 }
+    SiteIdParam:
+      name: siteId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    CategoryIdParam:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+
+  responses:
+    Problem:
+      description: "error (RFC 9457). 401 `login_required`/`session_invalid`, 403 `admin_required`/`csrf`/`bad_origin`."
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, description: "URI del tipo; `about:blank` o `https://crawler.example/problems/<code>`" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string, description: "código estable legible por máquinas" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/FieldError" }
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field: { type: string }
+        code: { type: string }
+        message: { type: string }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+        version: { type: string }
+    DetailStrategy:
+      type: string
+      enum: [HTML, SCRIPT_JSON, AJAX]
+      description: "HTML = selectores CSS; SCRIPT_JSON = regex sobre <script> + JSONPath; AJAX = respuestas XHR interceptadas + JSONPath"
+    PaginationType:
+      type: string
+      enum: [PAGE_PARAM, CURSOR, SCROLL_AJAX]
+    LinkExtractionType:
+      type: string
+      enum: [HREF, ONCLICK, DATA_ATTRIBUTE]
+    RuleMap:
+      type: object
+      maxProperties: 200
+      additionalProperties: { type: string, minLength: 1, maxLength: 500 }
+    PatternList:
+      type: array
+      maxItems: 200
+      items: { type: string, minLength: 1, maxLength: 2000 }
+    ExtractionConfig:
+      type: object
+      required: [detail_strategy, field_selectors, script_patterns, json_paths, intercept_patterns]
+      properties:
+        detail_strategy: { $ref: "#/components/schemas/DetailStrategy" }
+        field_selectors: { $ref: "#/components/schemas/RuleMap" }
+        script_patterns: { $ref: "#/components/schemas/PatternList" }
+        json_paths: { $ref: "#/components/schemas/RuleMap" }
+        intercept_patterns: { $ref: "#/components/schemas/PatternList" }
+    ExtractionConfigInput:
+      type: object
+      additionalProperties: false
+      description: Campos omitidos = vacíos; `detail_strategy` omitido = HTML.
+      properties:
+        detail_strategy: { $ref: "#/components/schemas/DetailStrategy" }
+        field_selectors: { $ref: "#/components/schemas/RuleMap" }
+        script_patterns: { $ref: "#/components/schemas/PatternList" }
+        json_paths: { $ref: "#/components/schemas/RuleMap" }
+        intercept_patterns: { $ref: "#/components/schemas/PatternList" }
+    Site:
+      type: object
+      required: [id, name, base_url, enabled, politeness_delay_ms, extraction_config, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        base_url: { type: string }
+        enabled: { type: boolean }
+        politeness_delay_ms: { type: integer }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfig" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SiteList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Site" } }
+    SiteInput:
+      type: object
+      required: [name, base_url]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        base_url: { type: string, minLength: 1, maxLength: 2048 }
+        enabled: { type: boolean, default: true }
+        politeness_delay_ms: { type: integer, minimum: 0, maximum: 600000, default: 1000 }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfigInput" }
+    SitePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        base_url: { type: string, minLength: 1, maxLength: 2048 }
+        enabled: { type: boolean }
+        politeness_delay_ms: { type: integer, minimum: 0, maximum: 600000 }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfigInput" }
+    Category:
+      type: object
+      required: [id, site_id, name, url, pagination_type, item_link_selector, link_extraction_type, enabled, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        name: { type: string }
+        url: { type: string }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string }
+        next_page_selector: { type: string, description: "vacío = automático (rel=next, «Siguiente», «Next», ›, »)" }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, description: "solo DATA_ATTRIBUTE" }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CategoryList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Category" } }
+    CategoryInput:
+      type: object
+      required: [name, url, pagination_type, item_link_selector]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        url: { type: string, minLength: 1, maxLength: 2048 }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string, minLength: 1, maxLength: 500 }
+        next_page_selector: { type: string, maxLength: 500 }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, maxLength: 255 }
+        enabled: { type: boolean, default: true }
+    CategoryPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        url: { type: string, minLength: 1, maxLength: 2048 }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string, minLength: 1, maxLength: 500 }
+        next_page_selector: { type: string, maxLength: 500 }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, maxLength: 255 }
+        enabled: { type: boolean }
+    RunKind:
+      type: string
+      enum: [DISCOVER_CATEGORY, DISCOVER_SITE, EXTRACT_SITE, CRAWL_SITE]
+    RunStatus:
+      type: string
+      enum: [QUEUED, RUNNING, COMPLETED, FAILED]
+    Run:
+      type: object
+      required: [id, site_id, kind, status, stats, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        category_id: { type: integer, format: int64, description: "solo DISCOVER_CATEGORY" }
+        kind: { $ref: "#/components/schemas/RunKind" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        stats:
+          type: object
+          additionalProperties: true
+          description: "`discovery` {pages,new_urls,duplicate_urls,errors,last_error}, `extraction` {claimed,succeeded,failed,last_error}, `categories`"
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    RunList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        per_page: { type: integer }
+    SiteStats:
+      type: object
+      required: [site_id, site_name, total_urls, pending, in_progress, completed, failed, extracted_items]
+      properties:
+        site_id: { type: integer, format: int64 }
+        site_name: { type: string }
+        total_urls: { type: integer, format: int64 }
+        pending: { type: integer, format: int64 }
+        in_progress: { type: integer, format: int64 }
+        completed: { type: integer, format: int64 }
+        failed: { type: integer, format: int64 }
+        extracted_items: { type: integer, format: int64 }
+        last_crawl: { type: string, format: date-time, description: "último intento de extracción" }
+    Item:
+      type: object
+      required: [id, discovered_url_id, site_id, site_name, url, title, properties, extracted_at]
+      properties:
+        id: { type: integer, format: int64 }
+        discovered_url_id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        site_name: { type: string }
+        url: { type: string }
+        title: { type: string }
+        properties: { type: object, additionalProperties: true }
+        raw_snapshot_path: { type: string }
+        extracted_at: { type: string, format: date-time }
+    ItemList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        per_page: { type: integer }
+    LoginInput:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, maxLength: 254 }
+        password: { type: string, maxLength: 256 }
+    User:
+      type: object
+      required: [id, email, is_admin]
+      properties:
+        id: { type: integer, format: int64 }
+        email: { type: string }
+        is_admin: { type: boolean }
+    Session:
+      type: object
+      required: [user, csrf_token, expires_at]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        csrf_token: { type: string }
+        expires_at: { type: string, format: date-time }
+
+security:
+  - session: []

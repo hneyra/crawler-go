@@ -22,6 +22,8 @@ x-backend: &backend
 
 x-backend-env: &backend-env
   CRAWLER_DATABASE_URL: postgres://crawler:${CRAWLER_DB_PASSWORD:-crawler-dev-only}@db:5432/crawler?sslmode=disable
+  # browser origin of the web ui (csrf origin check).
+  CRAWLER_PUBLIC_URL: ${CRAWLER_WEB_ORIGIN:-http://localhost:3000}
   # read-only rootfs: snapshots go to the writable volume below.
   CRAWLER_RAW_DATA_DIR: /data/raw
 
@@ -89,6 +91,31 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+
+  # admin ui. `docker compose --profile full up` (or make up-full).
+  # changing CRAWLER_WEB_PORT? set CRAWLER_WEB_ORIGIN to the same origin (csrf origin check).
+  web:
+    profiles: [full]
+    image: crawler-web:dev
+    build:
+      context: web
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      API_INTERNAL_URL: http://api:8080
+      ORIGIN: ${CRAWLER_WEB_ORIGIN:-http://localhost:3000}
+      PUBLIC_ORIGIN: ${CRAWLER_WEB_ORIGIN:-http://localhost:3000}
+      # direct hit, no proxy in front: use socket address.
+      ADDRESS_HEADER: ""
+    ports:
+      - "127.0.0.1:${CRAWLER_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   db-data:

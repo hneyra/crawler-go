@@ -1,0 +1,206 @@
+/*
+  design tokens (from costea-frontend). single source.
+  colors: light first, dark in media block below. every text pair checked aa
+  (tests/unit/contrast.test.ts reads this file).
+*/
+:root {
+  color-scheme: light dark;
+
+  /* type. inter variable (opsz 14-32, wght 300-700): one family, optical sizes do display work. */
+  --font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans',
+    sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* cv05 = l with tail (l vs I in model names). tnum only where asked. */
+  --font-features: 'calt', 'cv05';
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.9375rem;
+  --fs-lg: 1.0625rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: clamp(1.5rem, 1.3rem + 0.9vw, 1.875rem);
+  --fs-3xl: clamp(2rem, 1.5rem + 2.4vw, 3.25rem);
+  --fs-price: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 560;
+  --fw-bold: 620;
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-base: 1.55;
+  --tracking-tight: -0.011em;
+  --tracking-display: -0.024em;
+  --tracking-caps: 0.06em;
+
+  /* space (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* shape. tight radii, hairlines. */
+  --radius-s: 6px;
+  --radius: 8px;
+  --radius-l: 12px;
+  --radius-pill: 999px;
+  --hairline: 1px;
+
+  /* layout. breakpoints: media queries can't read vars -> values documented, used literally:
+     sm 40rem, md 48rem, lg 64rem, xl 80rem */
+  --content: 80rem;
+  --bp-sm: 40rem;
+  --bp-md: 48rem;
+  --bp-lg: 64rem;
+  --bp-xl: 80rem;
+  --tap: 2.75rem; /* min touch target */
+
+  /* stacking */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-sticky: 10;
+  --z-header: 20;
+  --z-overlay: 40;
+  --z-skip: 100;
+
+  /* motion */
+  --duration: 160ms;
+  --duration-slow: 240ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- color: light ---- */
+  /* refined neutral: cool slate greys, one cobalt accent, emerald only for money decisions. */
+  /* ink = near-black graphite. logo tile, tooltips, dark chips. */
+  --ink: #0b1220;
+  --ink-2: #151d2e;
+  --on-ink: #ffffff; /* 19:1 on ink */
+  --on-ink-muted: #b9c0d0; /* 9.6:1 on ink-2 */
+  --mint: #5fd3a6; /* logo stroke on ink. 9.9:1 */
+
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-hover: #f7f8fb;
+  --surface-zebra: #fafbfc;
+  --header-bg: var(--surface);
+  --border: #e4e7ec;
+  --border-soft: #eef0f3;
+  --border-strong: #838b99; /* controls. 3.5 white, 3.3 bg, 3.1 surface-2 (wcag 1.4.11) */
+  --text: #0e1525; /* 18:1 white */
+  --text-muted: #465063; /* 8.3:1 white */
+  --text-subtle: #596476; /* 6.0:1 white, 5.4 surface-2 */
+
+  --brand: #3a4bd1; /* cobalt. links, selection. 6.6:1 white */
+  --brand-strong: #2b389f;
+  --brand-soft: #eef0fd;
+  --brand-soft-border: #d3d8f8;
+
+  /* cta + best price share emerald. white on cta 5.5:1 */
+  --cta: #047857;
+  --cta-hover: #03664a;
+  --on-cta: #ffffff;
+  --best: #047857; /* 5.2:1 on bg, 5.0 on best-soft */
+  --best-soft: #ecf7f2;
+  --best-border: #b5e2cf;
+
+  --warn: #9a5800; /* 5.5:1 white, 5.1 warn-soft */
+  --warn-soft: #fdf6ea;
+  --warn-border: #f1dbb0;
+  --danger: #b4231a; /* 5.9:1 on danger-soft */
+  --danger-soft: #fdeeec;
+  --danger-border: #f4cbc6;
+  --info-soft: #eef0fd;
+  --info-border: #d3d8f8;
+  --demo: #6a3fc9; /* 6.4:1 on demo-soft */
+  --demo-soft: #f3effd;
+  --demo-border: #ddd2fa;
+
+  --focus: #3a4bd1;
+  --focus-on-ink: #5fd3a6;
+  --ring: 0 0 0 3px rgb(58 75 209 / 22%);
+
+  --chart-line: #3a4bd1;
+  --chart-area: rgb(58 75 209 / 8%);
+  --chart-grid: #eceef2;
+  --placeholder: #c3c8d2;
+
+  /* soft layered shadows + hairline ring. never heavy. */
+  --shadow-s: 0 1px 2px rgb(16 24 40 / 5%);
+  --shadow: 0 1px 2px rgb(16 24 40 / 4%), 0 2px 8px -2px rgb(16 24 40 / 6%);
+  --shadow-l: 0 2px 4px -2px rgb(16 24 40 / 6%), 0 16px 40px -12px rgb(16 24 40 / 18%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ---- color: dark ---- */
+    --ink: #06080c;
+    --ink-2: #10141c;
+    --on-ink: #e8eaef;
+    --on-ink-muted: #b9c0d0;
+    --mint: #5fd3a6;
+
+    --bg: #0a0c11;
+    --surface: #11141b;
+    --surface-2: #191d26;
+    --surface-hover: #161a22;
+    --surface-zebra: #141720;
+    --header-bg: var(--bg);
+    --border: #232834;
+    --border-soft: #1b1f29;
+    --border-strong: #636b7b; /* 3.4 surface, 3.6 bg, 3.1 surface-2 */
+    --text: #e8eaef;
+    --text-muted: #a9b0bd; /* 8.4:1 surface */
+    --text-subtle: #929aa8; /* 6.5:1 surface */
+
+    --brand: #9ba8ff; /* 7.9:1 surface */
+    --brand-strong: #c3caff;
+    --brand-soft: #1c2147;
+    --brand-soft-border: #313a78;
+
+    --cta: #34c98f;
+    --cta-hover: #52d8a3;
+    --on-cta: #03271b; /* 7.5:1 on cta */
+    --best: #3fd29a; /* 9.6:1 surface */
+    --best-soft: #0d2a1f;
+    --best-border: #1d5e45;
+
+    --warn: #f0b45e;
+    --warn-soft: #2a2010;
+    --warn-border: #5e4519;
+    --danger: #ff8b7e;
+    --danger-soft: #331716;
+    --danger-border: #6e302b;
+    --info-soft: #1c2147;
+    --info-border: #313a78;
+    --demo: #c4b4ff;
+    --demo-soft: #221b3d;
+    --demo-border: #43367a;
+
+    --focus: #9ba8ff;
+    --focus-on-ink: #5fd3a6;
+    --ring: 0 0 0 3px rgb(155 168 255 / 28%);
+
+    --chart-line: #9ba8ff;
+    --chart-area: rgb(155 168 255 / 10%);
+    --chart-grid: #222733;
+    --placeholder: #3a4150;
+
+    --shadow-s: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px -4px rgb(0 0 0 / 40%);
+    --shadow-l: 0 2px 4px -2px rgb(0 0 0 / 40%), 0 20px 48px -12px rgb(0 0 0 / 60%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration: 0ms;
+    --duration-slow: 0ms;
+  }
+}

@@ -14,6 +14,12 @@ Stack y convenciones = `costeape/costea-backend` (Go) + `costeape/costea-fronten
 - Sin goroutines sin fin definido; sin estado global mutable; ctx propagado.
 - Config solo por env (`CRAWLER_*`, ver `.env.example`).
 
+## Web (`web/`)
+- Convenciones de costea-frontend: SvelteKit 3 (config en `vite.config.ts`), runes, alias `#lib/*`, `$app/state`.
+- Toda la app es SPA privada (`ssr=false`, noindex). Nunca `{@html}` con datos de sitios crawleados.
+- Tipos desde `api/openapi.yaml` (`yarn api:sync && yarn api:gen`); nunca editar `schema.d.ts` a mano.
+- Verificar: `yarn api:check && yarn run check && yarn lint && yarn test && yarn build` (`make web-check`).
+
 ## Verificar antes de decir "listo"
 - `make check` (gofmt, vet, golangci-lint, govulncheck) y `make test` (Postgres real vía compose; `CRAWLER_TEST_DATABASE_URL`).
 - Tests de integración contra Postgres real con `dbtest.New(t)`; sin mocks de BD. Nunca debilitar un test.

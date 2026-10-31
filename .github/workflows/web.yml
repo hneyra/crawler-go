@@ -1,0 +1,68 @@
+# web (admin spa) ci. same steps as costea-frontend.
+name: web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      # node 26 ships without yarn/corepack.
+      - run: npm install -g yarn@1.22.22
+      - name: yarn cache dir
+        id: yarn-cache
+        run: echo "dir=$(yarn cache dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ runner.os }}-${{ hashFiles('web/yarn.lock') }}
+      - run: yarn install --frozen-lockfile
+      # spec copy + generated types must match backend api/openapi.yaml.
+      - run: yarn api:check
+      # `yarn check` is a yarn classic builtin -> use `run`.
+      - run: yarn run check
+      - run: yarn lint
+      - run: yarn test
+      - run: yarn build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: web
+          push: false
+          load: true
+          tags: crawler-web:ci
+      - name: smoke (read-only rootfs, numeric non-root uid)
+        working-directory: .
+        run: |
+          docker run -d --name web --read-only --tmpfs /tmp --user 1000:1000 --cap-drop ALL -p 3000:3000 crawler-web:ci
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3000/healthz && exit 0; sleep 1; done
+          docker logs web; exit 1
