@@ -177,8 +177,8 @@ func (s *Service) processURL(ctx context.Context, site crawl.Site, rules Rules, 
 	var (
 		page  fetch.Page
 		props Props
+		snap  string
 	)
-	snap := ""
 	if rules.Strategy() == crawl.StrategyAJAX {
 		if s.Renderer == nil {
 			return errors.New("AJAX strategy needs a headless renderer")
