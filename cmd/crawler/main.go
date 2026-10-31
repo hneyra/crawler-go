@@ -23,6 +23,7 @@ commands:
   migrate up         apply pending migrations
   migrate down-to N  roll back to version N (0 = all). dev only.
   migrate status     print db version
+  sync-sites [file]  upsert sites + categories from yaml (default ./sites-config.yml)
   healthcheck [url]  exit 0 if url (default http://127.0.0.1:8080/readyz) answers 2xx
   version
 `
@@ -57,6 +58,8 @@ func run(ctx context.Context, args []string, log *slog.Logger) error {
 		return serve(ctx, log)
 	case "migrate":
 		return migrate(ctx, log, args[1:])
+	case "sync-sites":
+		return syncSites(ctx, log, args[1:])
 	case "healthcheck":
 		return healthcheck(ctx, args[1:])
 	case "version":

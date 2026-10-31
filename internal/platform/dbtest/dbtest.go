@@ -57,18 +57,8 @@ func NewWithURL(t testing.TB, migrate bool) (*pgxpool.Pool, string) {
 		t.Fatalf("create db: %v", err)
 	}
 	_ = adminConn.Close(ctx)
-
-	u, err := url.Parse(admin)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	u.Path = "/" + name
-	pool, err := db.Open(ctx, u.String())
-	if err != nil {
-		t.Fatalf("open test db: %v", err)
-	}
+	// drop registered first: runs last (lifo), after pool close. also runs if open fails.
 	t.Cleanup(func() {
-		pool.Close()
 		cctx, ccancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer ccancel()
 		c, err := pgx.Connect(cctx, admin)
@@ -81,6 +71,17 @@ func NewWithURL(t testing.TB, migrate bool) (*pgxpool.Pool, string) {
 			t.Logf("drop db %s: %v", name, err)
 		}
 	})
+
+	u, err := url.Parse(admin)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	u.Path = "/" + name
+	pool, err := db.Open(ctx, u.String())
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(pool.Close)
 	if migrate {
 		if err := db.MigrateUp(ctx, pool, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 			t.Fatalf("migrate: %v", err)

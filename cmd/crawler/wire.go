@@ -40,7 +40,8 @@ type modules struct {
 func build(d deps) (modules, error) {
 	return modules{
 		server: &httpapi.Server{
-			Ops: &httpapi.Ops{DB: d.pool, Version: version},
+			Ops:      &httpapi.Ops{DB: d.pool, Version: version},
+			SitesAPI: wireSites(d),
 		},
 	}, nil
 }

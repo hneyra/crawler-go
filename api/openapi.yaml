@@ -17,6 +17,7 @@ servers:
   - url: /
 tags:
   - name: ops
+  - name: sites
 
 paths:
   /healthz:
@@ -37,7 +38,121 @@ paths:
         "200": { description: "listo", content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
         "503": { $ref: "#/components/responses/Problem" }
 
+  # ---------- sites ----------
+  /api/v1/sites:
+    get:
+      tags: [sites]
+      operationId: listSites
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "sitios por id", content: { application/json: { schema: { $ref: "#/components/schemas/SiteList" } } } }
+    post:
+      tags: [sites]
+      operationId: createSite
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SiteInput" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "201": { description: "creado", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [sites]
+      operationId: getSite
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [sites]
+      operationId: updateSite
+      description: Actualización parcial. Solo cambian los campos presentes. `extraction_config` se reemplaza completo.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SitePatch" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Site" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [sites]
+      operationId: deleteSite
+      description: Borra el sitio con sus categorías, URLs, items y ejecuciones.
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "204": { description: "borrado" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/sites/{siteId}/categories:
+    parameters:
+      - $ref: "#/components/parameters/SiteIdParam"
+    get:
+      tags: [sites]
+      operationId: listCategories
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "categorías del sitio", content: { application/json: { schema: { $ref: "#/components/schemas/CategoryList" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [sites]
+      operationId: createCategory
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CategoryInput" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "201": { description: "creada", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/categories/{categoryId}:
+    parameters:
+      - $ref: "#/components/parameters/CategoryIdParam"
+    get:
+      tags: [sites]
+      operationId: getCategory
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [sites]
+      operationId: updateCategory
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CategoryPatch" } } }
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "200": { description: "ok", content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [sites]
+      operationId: deleteCategory
+      responses:
+        default: { $ref: "#/components/responses/Problem" }
+        "204": { description: "borrada" }
+        "404": { $ref: "#/components/responses/Problem" }
+
 components:
+  parameters:
+    SiteIdParam:
+      name: siteId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    CategoryIdParam:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+
   responses:
     Problem:
       description: error (RFC 9457)
@@ -71,3 +186,122 @@ components:
       properties:
         status: { type: string, enum: [ok, unavailable] }
         version: { type: string }
+    DetailStrategy:
+      type: string
+      enum: [HTML, SCRIPT_JSON, AJAX]
+      description: "HTML = selectores CSS; SCRIPT_JSON = regex sobre <script> + JSONPath; AJAX = respuestas XHR interceptadas + JSONPath"
+    PaginationType:
+      type: string
+      enum: [PAGE_PARAM, CURSOR, SCROLL_AJAX]
+    LinkExtractionType:
+      type: string
+      enum: [HREF, ONCLICK, DATA_ATTRIBUTE]
+    RuleMap:
+      type: object
+      maxProperties: 200
+      additionalProperties: { type: string, minLength: 1, maxLength: 500 }
+    PatternList:
+      type: array
+      maxItems: 200
+      items: { type: string, minLength: 1, maxLength: 2000 }
+    ExtractionConfig:
+      type: object
+      required: [detail_strategy, field_selectors, script_patterns, json_paths, intercept_patterns]
+      properties:
+        detail_strategy: { $ref: "#/components/schemas/DetailStrategy" }
+        field_selectors: { $ref: "#/components/schemas/RuleMap" }
+        script_patterns: { $ref: "#/components/schemas/PatternList" }
+        json_paths: { $ref: "#/components/schemas/RuleMap" }
+        intercept_patterns: { $ref: "#/components/schemas/PatternList" }
+    ExtractionConfigInput:
+      type: object
+      additionalProperties: false
+      description: Campos omitidos = vacíos; `detail_strategy` omitido = HTML.
+      properties:
+        detail_strategy: { $ref: "#/components/schemas/DetailStrategy" }
+        field_selectors: { $ref: "#/components/schemas/RuleMap" }
+        script_patterns: { $ref: "#/components/schemas/PatternList" }
+        json_paths: { $ref: "#/components/schemas/RuleMap" }
+        intercept_patterns: { $ref: "#/components/schemas/PatternList" }
+    Site:
+      type: object
+      required: [id, name, base_url, enabled, politeness_delay_ms, extraction_config, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        base_url: { type: string }
+        enabled: { type: boolean }
+        politeness_delay_ms: { type: integer }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfig" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SiteList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Site" } }
+    SiteInput:
+      type: object
+      required: [name, base_url]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        base_url: { type: string, minLength: 1, maxLength: 2048 }
+        enabled: { type: boolean, default: true }
+        politeness_delay_ms: { type: integer, minimum: 0, maximum: 600000, default: 1000 }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfigInput" }
+    SitePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        base_url: { type: string, minLength: 1, maxLength: 2048 }
+        enabled: { type: boolean }
+        politeness_delay_ms: { type: integer, minimum: 0, maximum: 600000 }
+        extraction_config: { $ref: "#/components/schemas/ExtractionConfigInput" }
+    Category:
+      type: object
+      required: [id, site_id, name, url, pagination_type, item_link_selector, link_extraction_type, enabled, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        site_id: { type: integer, format: int64 }
+        name: { type: string }
+        url: { type: string }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string }
+        next_page_selector: { type: string, description: "vacío = automático (rel=next, «Siguiente», «Next», ›, »)" }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, description: "solo DATA_ATTRIBUTE" }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CategoryList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Category" } }
+    CategoryInput:
+      type: object
+      required: [name, url, pagination_type, item_link_selector]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        url: { type: string, minLength: 1, maxLength: 2048 }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string, minLength: 1, maxLength: 500 }
+        next_page_selector: { type: string, maxLength: 500 }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, maxLength: 255 }
+        enabled: { type: boolean, default: true }
+    CategoryPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        url: { type: string, minLength: 1, maxLength: 2048 }
+        pagination_type: { $ref: "#/components/schemas/PaginationType" }
+        item_link_selector: { type: string, minLength: 1, maxLength: 500 }
+        next_page_selector: { type: string, maxLength: 500 }
+        link_extraction_type: { $ref: "#/components/schemas/LinkExtractionType" }
+        link_attribute: { type: string, maxLength: 255 }
+        enabled: { type: boolean }
