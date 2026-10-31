@@ -1,4 +1,4 @@
-# backend ci. go checks + image build (no push).
+# backend ci. go checks + image builds (no push) + infra verify.
 name: ci
 
 on:
@@ -83,7 +83,43 @@ jobs:
           tags: crawler-go:ci
           push: false
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
       - name: smoke
         run: test "$(docker run --rm crawler-go:ci version)" = "${{ github.sha }}"
+      - name: build worker image (chromium)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: worker
+          build-args: VERSION=${{ github.sha }}
+          tags: crawler-go-worker:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+      - name: smoke worker (binary + chromium renders a page as non-root, read-only rootfs)
+        run: |
+          test "$(docker run --rm crawler-go-worker:ci version)" = "${{ github.sha }}"
+          docker run --rm --read-only --tmpfs /tmp --tmpfs /data:uid=65532 --shm-size 256m --user 65532:65532 \
+            --entrypoint /usr/bin/chromium crawler-go-worker:ci \
+            --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<h1>ok-crawler</h1>' | grep -q ok-crawler
+
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      # node 26 ships no corepack. pin yarn classic.
+      - run: npm install -g yarn@1.22.22
+      - run: yarn install --frozen-lockfile --non-interactive
+      - run: yarn verify

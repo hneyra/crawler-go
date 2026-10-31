@@ -7,7 +7,7 @@ DB_PASSWORD ?= $(or $(CRAWLER_DB_PASSWORD),crawler-dev-only)
 TEST_DB_URL ?= postgres://crawler:$(DB_PASSWORD)@127.0.0.1:$(DB_PORT)/crawler?sslmode=disable
 VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: help db-up db-down db-reset build run test test-short fmt fmt-check vet lint vuln check generate tidy up up-full down logs docker-build web-check
+.PHONY: help db-up db-down db-reset build run test test-short fmt fmt-check vet lint vuln check generate tidy up up-full down logs docker-build web-check infra-verify infra-preview
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | cut -d: -f1 | sort
@@ -73,3 +73,11 @@ docker-build:
 # web (admin spa): same checks as its ci job.
 web-check:
 	cd web && yarn install --frozen-lockfile && yarn api:check && yarn run check && yarn lint && yarn test && yarn build
+
+# pulumi k3s deploy (docs/guides/deploy-k3s.md). node 26 + yarn 1.22.
+INFRA_STACK ?= local
+infra-verify:
+	cd infra && yarn install --frozen-lockfile && yarn verify
+
+infra-preview:
+	cd infra && pulumi preview --stack $(INFRA_STACK)

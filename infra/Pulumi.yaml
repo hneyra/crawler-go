@@ -1,0 +1,8 @@
+# crawler k3s deployment. state: local file backend only (docs/guides/deploy-k3s.md).
+name: crawler
+description: Crawler on k3s (api, worker+chromium, web, postgres, traefik routes)
+runtime:
+  name: nodejs
+  options:
+    packagemanager: yarn
+    typescript: true

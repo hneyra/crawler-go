@@ -73,14 +73,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # job runner: crawl runs + periodic maintenance. chrome (headless) needed only for
-  # blocked/js sites; this image has none -> see M7 headless image.
+  # job runner: crawl runs + periodic maintenance. worker target = binary + chromium
+  # (blocked/js sites: cloudflare fallback, SCROLL_AJAX, AJAX extraction).
   worker:
     <<: *backend
+    image: crawler-go-worker:dev
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: worker
+      args:
+        VERSION: ${CRAWLER_VERSION:-dev}
+    # chromium: shm for renderer processes (docker default 64MB too small).
+    shm_size: 512m
     command: ["worker"]
     environment:
       <<: *backend-env
       CRAWLER_WORKER_HEALTH_ADDR: 127.0.0.1:8081
+      CRAWLER_BROWSER_PROFILE_DIR: /data/profile
     volumes:
       - raw-data:/data
     healthcheck:

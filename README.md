@@ -141,4 +141,11 @@ El backend debe tener `CRAWLER_PUBLIC_URL` = origen del panel (chequeo CSRF). Ti
 - `make test`: tests con Postgres real (levanta `db` con compose). Los tests del renderer usan Chrome
   (`CRAWLER_TEST_CHROME=/ruta/a/chrome`; sin Chrome se omiten).
 
+## Documentación
+
+- [Arquitectura](docs/architecture.md) · [Flujo de datos y diferencias con Java](docs/data-flow.md) · [API](docs/api.md)
+- Guías: [desarrollo local](docs/guides/local-dev.md), [configurar sitios](docs/guides/sites-config.md),
+  [despliegue k3s](docs/guides/deploy-k3s.md), [problemas frecuentes](docs/guides/troubleshooting.md)
+- [ADRs](docs/adr/)
+
 Plan de trabajo: issues `[Mx.y]` agrupados por milestone (`milestone:m0` … `milestone:m7`), un PR por milestone.
